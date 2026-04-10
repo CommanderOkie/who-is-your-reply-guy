@@ -137,7 +137,7 @@ export default function ResultCard({ result }: Props) {
               </ul>
 
               {/* Dominance bars */}
-              <div className="dominance-bars">
+              <div className="dominance-bars" data-html2canvas-ignore="true">
                 <div className="dominance-title">Reply Dominance</div>
                 {top_reply_guys.map((rg) => (
                   <div key={rg.user} className="dominance-row">
@@ -280,13 +280,10 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
   // Addiction Score for #1 (cap at 100)
   const addictionScore = Math.min(100, Math.round((rg.dominance * 0.4) + (loyaltyPct * 0.6) + (rg.replies * 2)));
 
-  const animationDelay = `${0 + (rank * 0.15)}s`;
-
   return (
-    <li
-      className={`reply-guy-item animate-reveal ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`}
+    <li 
+      className={`reply-guy-item ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`} 
       aria-label={`Rank ${rank + 1}: @${rg.user}`}
-      style={{ animationDelay }}
     >
       <span className="reply-guy-rank" aria-hidden>
         {RANK_MEDALS[rank] ?? `#${rank + 1}`}
