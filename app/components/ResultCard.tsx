@@ -7,9 +7,10 @@ const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
 
 interface Props {
   result: AnalyzeResult;
+  onReset?: () => void;
 }
 
-export default function ResultCard({ result }: Props) {
+export default function ResultCard({ result, onReset }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -219,6 +220,18 @@ export default function ResultCard({ result }: Props) {
         <div className="cta-loop">
            Now check your friends 👇
         </div>
+
+        {onReset && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+            <button 
+              className="analyze-btn" 
+              onClick={onReset}
+              style={{ width: '100%', justifyContent: 'center', padding: '14px', fontSize: '1rem' }}
+            >
+              <span aria-hidden>↺</span> Try another one
+            </button>
+          </div>
+        )}
 
         <button 
           className="criteria-toggle-btn"

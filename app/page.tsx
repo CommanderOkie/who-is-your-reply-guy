@@ -222,7 +222,7 @@ export default function Home() {
               >Refresh</button>
             </p>
           )}
-          <ResultCard result={result} />
+          <ResultCard result={result} onReset={() => { setResult(null); setUsername(""); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
         </div>
       )}
 
