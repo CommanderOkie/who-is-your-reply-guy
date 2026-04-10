@@ -23,6 +23,7 @@ const CONCURRENCY = 4;           // parallel TweetDetail fetches
 
 export interface ReplyGuy {
   user: string;
+  score: number;
   replies: number;
   tweets_replied: number;
   dominance: number;
@@ -41,6 +42,12 @@ export interface AnalyzeResult {
   tweets_analyzed: number;
   disclaimer: string;
   cached?: boolean;
+}
+
+export interface ReplyInstance {
+  handle: string;
+  createdAt: number;
+  authorRepliedBack: boolean;
 }
 
 // ─── Query ID management ──────────────────────────────────────────────────────
@@ -210,7 +217,7 @@ async function lookupUser(
 
 // ─── Get user's original tweets ───────────────────────────────────────────────
 
-interface MinTweet { id: string; authorHandle: string }
+interface MinTweet { id: string; authorHandle: string; createdAt: number; }
 
 async function getUserTweets(
   userId: string,
@@ -255,7 +262,7 @@ async function getUserTweets(
     if (!r) continue;
     const t = parseTweet(r);
     if (!t || t.isReply || t.isRetweet) continue;
-    tweets.push({ id: t.id, authorHandle: t.authorHandle });
+    tweets.push({ id: t.id, authorHandle: t.authorHandle, createdAt: t.createdAt });
     if (tweets.length >= count) break;
   }
   return tweets;
@@ -278,9 +285,13 @@ function parseTweet(result: Record<string, unknown>) {
     const authorHandle =
       (cuc?.screen_name as string) || ((cu?.legacy as Record<string, unknown>)?.screen_name as string) || "";
 
+    const createdAtStr = legacy.created_at as string | undefined;
+    const createdAt = createdAtStr ? new Date(createdAtStr).getTime() : 0;
+
     return {
       id: actual.rest_id as string,
       authorHandle,
+      createdAt,
       isReply: !!legacy.in_reply_to_status_id_str,
       isRetweet: ((legacy.full_text as string) || "").startsWith("RT @"),
     };
@@ -294,7 +305,7 @@ async function getTweetReplies(
   targetHandle: string,
   headers: Record<string, string>,
   ids: QueryIds
-): Promise<string[]> {
+): Promise<ReplyInstance[]> {
   const vars = encodeURIComponent(
     JSON.stringify({
       focalTweetId: tweetId,
@@ -337,32 +348,46 @@ async function getTweetReplies(
     i.type === "TimelineAddEntries" ? ((i.entries ?? []) as ConvEntry[]) : []
   );
 
-  const repliers: string[] = [];
+  const repliers: ReplyInstance[] = [];
   for (const entry of entries) {
     const items = entry.content?.items ?? [];
-    const all = [
-      entry.content?.itemContent?.tweet_results?.result,
-      ...items.map((it) => it.item?.itemContent?.tweet_results?.result),
-    ].filter(Boolean) as Record<string, unknown>[];
+    
+    let rootReplyResult = entry.content?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+    if (!rootReplyResult && items.length > 0) {
+      rootReplyResult = items[0].item?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+    }
+    
+    if (!rootReplyResult) continue;
+    
+    const rootReply = parseTweet(rootReplyResult);
+    if (!rootReply) continue;
+    
+    const leg =
+      (rootReplyResult.legacy as Record<string, unknown>) ||
+      ((rootReplyResult.tweet as Record<string, unknown>)?.legacy as Record<string, unknown>);
+    if ((leg?.in_reply_to_status_id_str as string) !== tweetId) continue;
+    
+    const handle = rootReply.authorHandle.toLowerCase();
+    if (!handle || handle === targetHandle.toLowerCase()) continue;
 
-    for (const r of all) {
-      const leg =
-        (r.legacy as Record<string, unknown>) ||
-        ((r.tweet as Record<string, unknown>)?.legacy as Record<string, unknown>);
-      if ((leg?.in_reply_to_status_id_str as string) !== tweetId) continue;
-
-      const core = (r.core ?? (r.tweet as Record<string,unknown>)?.core) as Record<string, unknown> | undefined;
-      const coreUser = (core?.user_results as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
-      const coreUserCore = coreUser?.core as Record<string, unknown> | undefined;
-      const handle: string =
-        (coreUserCore?.screen_name as string) ||
-        ((coreUser?.legacy as Record<string, unknown>)?.screen_name as string) ||
-        "";
-
-      if (handle && handle.toLowerCase() !== targetHandle.toLowerCase()) {
-        repliers.push(handle.toLowerCase());
+    let authorRepliedBack = false;
+    if (items.length > 1) {
+      for (let i = 1; i < items.length; i++) {
+        const descResult = items[i].item?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+        if (!descResult) continue;
+        const descTweet = parseTweet(descResult);
+        if (descTweet && descTweet.authorHandle.toLowerCase() === targetHandle.toLowerCase()) {
+          authorRepliedBack = true;
+          break;
+        }
       }
     }
+    
+    repliers.push({
+      handle,
+      createdAt: rootReply.createdAt,
+      authorRepliedBack,
+    });
   }
   return repliers;
 }
@@ -374,12 +399,11 @@ async function fetchRepliesParallel(
   targetHandle: string,
   headers: Record<string, string>,
   ids: QueryIds
-): Promise<{ replyCounts: Record<string, { count: number; tweetIds: Set<string> }>; total: number; rateLimited: boolean }> {
-  const replyCounts: Record<string, { count: number; tweetIds: Set<string> }> = {};
+): Promise<{ replyCounts: Record<string, { count: number; tweetIds: Set<string>; score: number }>; total: number; rateLimited: boolean }> {
+  const replyCounts: Record<string, { count: number; tweetIds: Set<string>; score: number }> = {};
   let total = 0;
   let rateLimited = false;
 
-  // Process tweets in batches of CONCURRENCY
   for (let i = 0; i < tweets.length; i += CONCURRENCY) {
     if (rateLimited) break;
     const batch = tweets.slice(i, i + CONCURRENCY);
@@ -390,20 +414,45 @@ async function fetchRepliesParallel(
 
     for (let j = 0; j < results.length; j++) {
       const r = results[j];
+      const focalTweet = batch[j];
       if (r.status === "rejected") {
         if ((r.reason as Error)?.message === "RATE_LIMITED") rateLimited = true;
         if ((r.reason as Error)?.message === "AUTH_FAILED") throw new Error("AUTH_FAILED");
         continue;
       }
-      for (const handle of r.value) {
-        if (!replyCounts[handle]) replyCounts[handle] = { count: 0, tweetIds: new Set() };
+      
+      for (const instance of r.value) {
+        const { handle, createdAt, authorRepliedBack } = instance;
+        if (!replyCounts[handle]) {
+          replyCounts[handle] = { count: 0, tweetIds: new Set(), score: 0 };
+        }
+        
+        // Spam Cap: Only score the FIRST reply we process per focal tweet for this user
+        if (replyCounts[handle].tweetIds.has(focalTweet.id)) continue;
+        
         replyCounts[handle].count++;
-        replyCounts[handle].tweetIds.add(batch[j].id);
+        replyCounts[handle].tweetIds.add(focalTweet.id);
         total++;
+        
+        // Calculate Weighted Score
+        let points = 100; // Base consistency points
+        
+        if (createdAt > 0 && focalTweet.createdAt > 0) {
+          const diffMinutes = (createdAt - focalTweet.createdAt) / (1000 * 60);
+          if (diffMinutes <= 5) points += 100;
+          else if (diffMinutes <= 15) points += 80;
+          else if (diffMinutes <= 60) points += 50;
+          else if (diffMinutes <= 360) points += 20;
+        }
+        
+        if (authorRepliedBack) {
+          points += 250;
+        }
+        
+        replyCounts[handle].score += points;
       }
     }
 
-    // Small cooldown between batches to avoid hammering X
     if (i + CONCURRENCY < tweets.length && !rateLimited) {
       await sleep(400);
     }
@@ -474,16 +523,16 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
 
   // 4. Sort and rank top 5
   const sorted = Object.entries(replyCounts)
-    .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size }))
+    .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
     .filter((u) => u.replies > 0)
-    .sort((a, b) => b.replies - a.replies || b.tweets_replied - a.tweets_replied)
+    .sort((a, b) => b.score - a.score || b.replies - a.replies)
     .slice(0, 5);
 
   const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
     const dominance = total > 0 ? Math.round((rg.replies / total) * 100) : 0;
     const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
     const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
-    return { ...rg, dominance, loyaltyScore: loyalty, badge, badgeEmoji: emoji, color };
+    return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
   });
 
   const result: AnalyzeResult = {
