@@ -19,27 +19,11 @@ function isRateLimited(ip: string): boolean {
 
 // Global in-memory queue to limit simultaneous scraping (per Vercel instance)
 let activeScrapes = 0;
+let waitlistCount = 0;
 const MAX_CONCURRENT_SCRAPES = 2;
 
-async function executeWithQueue<T>(task: () => Promise<T>): Promise<T> {
-  const maxWaitMs = 25000; // wait up to 25 seconds for a slot
-  let waited = 0;
-  while (activeScrapes >= MAX_CONCURRENT_SCRAPES) {
-    if (waited >= maxWaitMs) throw new Error("SERVER_BUSY");
-    await new Promise((r) => setTimeout(r, 1000));
-    waited += 1000;
-  }
-
-  activeScrapes++;
-  try {
-    return await task();
-  } finally {
-    activeScrapes--;
-  }
-}
-
 export async function POST(request: NextRequest) {
-  // IP-based rate limiting (protect your burner account)
+  // IP-based rate limiting
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
@@ -61,59 +45,73 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Username is required." }, { status: 400 });
   }
 
-  try {
-    // Await for queue slot before scraping
-    const result = await executeWithQueue(() => analyzeReplyGuys(username.trim()));
-    
-    // Leverage Vercel Edge Cache globally! (Caches responses for 1 hour to prevent redundant API drain)
-    return NextResponse.json(result, {
-      headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
-      },
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Analysis failed.";
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enqueue = (obj: any) => {
+        try {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(obj) + "\n"));
+        } catch { /* stream closed by client */ }
+      };
 
-    if (message === "TWITTER_COOKIES_NOT_SET") {
-      return NextResponse.json(
-        { error: "The server isn't configured yet — cookies not set." },
-        { status: 503 }
-      );
+      waitlistCount++;
+      let inQueue = true;
+
+      try {
+        let waited = 0;
+        let lastReportedPos = -1;
+
+        while (activeScrapes >= MAX_CONCURRENT_SCRAPES) {
+          if (waited >= 40000) {
+            enqueue({ error: "Waitlist timeout. The servers are blazing hot! 🔥 Try again in a few minutes." });
+            controller.close();
+            return;
+          }
+          if (lastReportedPos !== waitlistCount) {
+             enqueue({ type: "queue", position: waitlistCount });
+             lastReportedPos = waitlistCount;
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+          waited += 2000;
+        }
+
+        inQueue = false;
+        waitlistCount--;
+        activeScrapes++;
+
+        try {
+          enqueue({ type: "status", message: "Analyzing..." });
+          const result = await analyzeReplyGuys(username.trim());
+          enqueue({ type: "result", data: result });
+        } finally {
+          activeScrapes--;
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Analysis failed.";
+        
+        if (message === "TWITTER_COOKIES_NOT_SET") {
+          enqueue({ error: "The server isn't configured yet — cookies not set." });
+        } else if (message === "RATE_LIMITED") {
+          enqueue({ error: "X is rate-limiting our requests right now 🚦 The analysis might have partial data. Try again in a minute." });
+        } else if (message === "AUTH_FAILED") {
+          enqueue({ error: "Authentication failed — the burner account cookies may have expired. 🔑" });
+        } else if (message.includes("not found") || message.includes("suspended") || message.includes("private") || message.includes("no recent posts")) {
+          enqueue({ error: message });
+        } else {
+          console.error("[analyze] Error:", message);
+          enqueue({ error: `Analysis failed: ${message}` });
+        }
+      } finally {
+        if (inQueue) waitlistCount--;
+        try { controller.close(); } catch {}
+      }
     }
+  });
 
-    if (message === "SERVER_BUSY") {
-      return NextResponse.json(
-        { error: "Too many people are testing their reply guys right now! 🥵 Please try again in 30 seconds." },
-        { status: 429 }
-      );
-    }
-
-    if (message === "RATE_LIMITED") {
-      return NextResponse.json(
-        {
-          error:
-            "X is rate-limiting our requests right now 🚦 The analysis might have partial data. Try again in a minute.",
-        },
-        { status: 429 }
-      );
-    }
-
-    if (message === "AUTH_FAILED") {
-      return NextResponse.json(
-        { error: "Authentication failed — the burner account cookies may have expired. 🔑" },
-        { status: 401 }
-      );
-    }
-
-    if (message.includes("not found") || message.includes("suspended")) {
-      return NextResponse.json({ error: message }, { status: 404 });
-    }
-
-    if (message.includes("private") || message.includes("no recent posts")) {
-      return NextResponse.json({ error: message }, { status: 422 });
-    }
-
-    console.error("[analyze] Error:", message);
-    return NextResponse.json({ error: `Analysis failed: ${message}` }, { status: 500 });
-  }
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive"
+    },
+  });
 }

@@ -14,6 +14,7 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -39,25 +40,65 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
-
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: raw }),
       });
-      const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Something went wrong. Please try again.");
+        try {
+          const data = await res.json();
+          setError(data.error || "Something went wrong. Please try again.");
+        } catch {
+          setError("Server returned an error. Please try again.");
+        }
         return;
       }
 
-      setResult(data as AnalyzeResult);
-      setTimeout(
-        () => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-        100
-      );
+      if (!res.body) throw new Error("No response body.");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let done = false;
+      let buffer = "";
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const msg = JSON.parse(line);
+              if (msg.error) {
+                setError(msg.error);
+                setLoading(false);
+                return;
+              } else if (msg.type === "queue") {
+                setQueueMessage(`Waitlist: You are #${msg.position} in queue... ⏳`);
+              } else if (msg.type === "status") {
+                setQueueMessage(null); // return to normal text
+              } else if (msg.type === "result") {
+                setResult(msg.data as AnalyzeResult);
+                setTimeout(
+                  () => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  100
+                );
+                setLoading(false);
+                return;
+              }
+            } catch (err) {
+              console.error("Stream JSON parse error:", err);
+            }
+          }
+        }
+      }
     } catch {
       setError("Network error. Check your connection and try again.");
     } finally {
@@ -156,7 +197,9 @@ export default function Home() {
       {loading && (
         <section className="loading-state" aria-live="polite" aria-label="Analyzing">
           <div className="loading-spinner" />
-          <p className="loading-text">{LOADING_STEPS[loadingStep].text}</p>
+          <p className="loading-text" style={{ color: queueMessage ? '#f472b6' : 'inherit' }}>
+             {queueMessage ? queueMessage : LOADING_STEPS[loadingStep].text}
+          </p>
           <p className="loading-sub">Scraping X replies — takes ~8–15s ⚡</p>
           <div className="loading-steps">
             {LOADING_STEPS.slice(0, loadingStep + 1).map((step, i) => (
