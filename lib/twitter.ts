@@ -17,7 +17,7 @@ import { unstable_cache } from "next/cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 10;   // dropped to 10 until cookie pool gets larger
+const TWEETS_TO_ANALYZE = 15;   // raised to 15 posts for better accuracy while balancing cookie limits
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // --- Auto-Heal Load Balancer State ---
