@@ -64,7 +64,13 @@ export async function POST(request: NextRequest) {
   try {
     // Await for queue slot before scraping
     const result = await executeWithQueue(() => analyzeReplyGuys(username.trim()));
-    return NextResponse.json(result);
+    
+    // Leverage Vercel Edge Cache globally! (Caches responses for 1 hour to prevent redundant API drain)
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Analysis failed.";
 

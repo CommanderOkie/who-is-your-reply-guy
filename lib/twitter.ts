@@ -16,7 +16,7 @@ import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 20;   // lowered to 20 to preserve burner account limits
+const TWEETS_TO_ANALYZE = 10;   // lowered to 10 to preserve burner account limits during viral bursts
 const CONCURRENCY = 4;           // parallel TweetDetail fetches
 
 // ─── Types ───────────────────────────────────────────────────────────────────
