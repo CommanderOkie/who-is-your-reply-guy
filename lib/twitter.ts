@@ -19,6 +19,14 @@ const BEARER_TOKEN =
 const TWEETS_TO_ANALYZE = 20;   // kept at 20 for maximum accuracy (requires multi-cookie rotation)
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
+// --- Auto-Heal Load Balancer State ---
+const burnedCookies = new Map<string, number>();
+
+export function markCookieBurned(cookie: string) {
+  burnedCookies.set(cookie, Date.now());
+  console.warn("🔥 Burned cookie auto-identified! Rotating out of pool for 15 minutes.");
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ReplyGuy {
@@ -111,11 +119,33 @@ function getServerCookies(): string {
   if (!c || c.trim().length < 20 || c.includes("PASTE_YOUR")) {
     throw new Error("TWITTER_COOKIES_NOT_SET");
   }
-  const pools = c.split("\n").map(l => l.trim()).filter(l => l.length > 20);
+  let pools = c.split(/\\n|\n/).map(l => l.trim()).filter(l => l.length > 20);
+  
+  if (pools.length === 1 && pools[0].includes("guest_id") && pools[0].indexOf("guest_id", 10) > 0) {
+    const matches = c.split(/guest_id/g).filter(x => x.includes("auth_token="));
+    pools = matches.map(m => "guest_id" + m);
+  }
+
   if (pools.length === 0) throw new Error("TWITTER_COOKIES_NOT_SET");
   
-  // Randomly rotate to circumvent 150/15m limit per account
-  return pools[Math.floor(Math.random() * pools.length)];
+  // Exclude cookies that hit 429 within the last 15 minutes
+  const now = Date.now();
+  const available = pools.filter(c => {
+    const burnedAt = burnedCookies.get(c);
+    if (!burnedAt) return true;
+    if (now - burnedAt > 15 * 60 * 1000) {
+      burnedCookies.delete(c);
+      return true;
+    }
+    return false;
+  });
+  
+  if (available.length === 0) {
+    // If all are burned out, we blindly rotate and gracefully hit the rate limit screen
+    return pools[Math.floor(Math.random() * pools.length)];
+  }
+  
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 function buildHeaders(cookies: string): Record<string, string> {
@@ -528,48 +558,55 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
   const headers = buildHeaders(cookies);
   const ids = await getQueryIds();
 
-  // 1. Look up user
-  const user = await lookupUser(clean, headers, ids);
+  try {
+    // 1. Look up user
+    const user = await lookupUser(clean, headers, ids);
 
-  // 2. Get original tweets
-  const tweets = await getUserTweets(user.id, TWEETS_TO_ANALYZE, headers, ids);
-  if (tweets.length === 0) {
-    throw new Error(`No original tweets found for @${clean}. The account may be private or have no recent posts.`);
+    // 2. Get original tweets
+    const tweets = await getUserTweets(user.id, TWEETS_TO_ANALYZE, headers, ids);
+    if (tweets.length === 0) {
+      throw new Error(`No original tweets found for @${clean}. The account may be private or have no recent posts.`);
+    }
+
+    // 3. Parallel-fetch replies for all tweets
+    const { replyCounts, total, rateLimited } = await fetchRepliesParallel(
+      tweets, clean, headers, ids
+    );
+
+    if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
+
+    // 4. Sort and rank top 5
+    const sorted = Object.entries(replyCounts)
+      .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
+      .filter((u) => u.replies > 0)
+      .sort((a, b) => b.score - a.score || b.replies - a.replies)
+      .slice(0, 5);
+
+    const totalTop5Replies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
+
+    const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
+      const dominance = totalTop5Replies > 0 ? Math.round((rg.replies / totalTop5Replies) * 100) : 0;
+      const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
+      const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
+      return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
+    });
+
+    const result: AnalyzeResult = {
+      username: clean,
+      displayName: user.name,
+      avatarUrl: user.avatar,
+      top_reply_guys,
+      total_replies_analyzed: total,
+      tweets_analyzed: tweets.length,
+      disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
+    };
+
+    resultCache.set(cacheKey, result, RESULT_TTL);
+    return result;
+  } catch (err) {
+    if (err instanceof Error && err.message === "RATE_LIMITED") {
+      markCookieBurned(cookies);
+    }
+    throw err;
   }
-
-  // 3. Parallel-fetch replies for all tweets
-  const { replyCounts, total, rateLimited } = await fetchRepliesParallel(
-    tweets, clean, headers, ids
-  );
-
-  if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
-
-  // 4. Sort and rank top 5
-  const sorted = Object.entries(replyCounts)
-    .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
-    .filter((u) => u.replies > 0)
-    .sort((a, b) => b.score - a.score || b.replies - a.replies)
-    .slice(0, 5);
-
-  const totalTop5Replies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
-
-  const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
-    const dominance = totalTop5Replies > 0 ? Math.round((rg.replies / totalTop5Replies) * 100) : 0;
-    const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
-    const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
-    return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
-  });
-
-  const result: AnalyzeResult = {
-    username: clean,
-    displayName: user.name,
-    avatarUrl: user.avatar,
-    top_reply_guys,
-    total_replies_analyzed: total,
-    tweets_analyzed: tweets.length,
-    disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
-  };
-
-  resultCache.set(cacheKey, result, RESULT_TTL);
-  return result;
 }
