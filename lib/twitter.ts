@@ -17,7 +17,7 @@ import { unstable_cache } from "next/cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 7;   // Severely cut from 20 to 7 to natively survive > 2.4k viral requests per hr
+const TWEETS_TO_ANALYZE = 20;   // restored to 20 because user successfully brute-forced the cookie pool
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // --- Auto-Heal Load Balancer State ---
