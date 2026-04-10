@@ -16,7 +16,6 @@ export default function ResultCard({ result }: Props) {
   const [animateBars, setAnimateBars] = useState(false);
 
   useEffect(() => {
-    // Trigger bar animation after mount
     const t = setTimeout(() => setAnimateBars(true), 300);
     return () => clearTimeout(t);
   }, []);
@@ -75,11 +74,18 @@ export default function ResultCard({ result }: Props) {
   const shareOnX = () => {
     const top = result.top_reply_guys[0];
     const text = top
-      ? `🚨 I just checked who's living rent-free in @${result.username}'s mentions!\n\n👑 #1 Reply Guy: @${top.user} with ${top.replies} replies! (${top.loyaltyScore}% loyalty 😭)\n\nCheck who your Reply Guys are here 👇👀`
+      ? `I just exposed my reply guy 💀\n\n👑 @${top.user} replies to EVERYTHING I tweet\n(${top.loyaltyScore}% loyalty is insane 😭)\n\nCheck yours 👇`
       : `Who's living rent-free in @${result.username}'s replies? 👀 I just checked! 👇`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-
     window.open(url, "_blank");
+  };
+
+  const copySavageMode = () => {
+    const top = result.top_reply_guys[0];
+    if (!top) return;
+    const text = `@${top.user} you need to get a job bro 💀\nYou replied to ${top.loyaltyScore}% of my tweets 😭`;
+    navigator.clipboard.writeText(text);
+    alert("🔥 Savage version copied to clipboard!");
   };
 
   const { top_reply_guys, username, displayName, avatarUrl, total_replies_analyzed, tweets_analyzed, disclaimer } = result;
@@ -87,7 +93,7 @@ export default function ResultCard({ result }: Props) {
   return (
     <section className="results-section" aria-label="Analysis results">
       <div className="card-wrapper">
-        {/* The card (captured for image export) */}
+        {/* The card */}
         <div className="result-card" ref={cardRef} id="result-card">
           {/* Header */}
           <div className="card-header">
@@ -173,7 +179,7 @@ export default function ResultCard({ result }: Props) {
           </div>
         </div>
 
-        {/* Action buttons (outside card so they don't appear in screenshot) */}
+        {/* Action buttons */}
         <div className="action-buttons" role="group" aria-label="Share options">
           <button
             id="download-card-btn"
@@ -191,6 +197,15 @@ export default function ResultCard({ result }: Props) {
           >
             {copying ? "⏳ Copying…" : "📋 Copy as Image"}
           </button>
+          {result.top_reply_guys.length > 0 && (
+            <button
+              id="expose-mode-btn"
+              className="action-btn action-btn-expose"
+              onClick={copySavageMode}
+            >
+              🔥 Copy Savage Version
+            </button>
+          )}
           <button
             id="share-x-btn"
             className="action-btn action-btn-x"
@@ -198,6 +213,10 @@ export default function ResultCard({ result }: Props) {
           >
             𝕏 Share on X
           </button>
+        </div>
+        
+        <div className="cta-loop">
+           Now check your friends 👇
         </div>
       </div>
     </section>
@@ -207,9 +226,44 @@ export default function ResultCard({ result }: Props) {
 // ─── Individual reply guy row ───────────────────────────────────────────────
 function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
   const loyaltyPct = rg.loyaltyScore;
+  
+  // Apply specific UI roles
+  const isHero = rank === 0;
+  const isMedium = rank === 1 || rank === 2;
+  const isCompact = rank === 3 || rank === 4;
+
+  let displayEmoji = rg.badgeEmoji;
+  let displayBadge = rg.badge;
+
+  if (isHero) {
+    displayEmoji = "👑";
+    displayBadge = "Certified Reply Guy";
+  } else if (rank === 1) {
+    displayEmoji = "💀";
+    displayBadge = "Reply Demon";
+  } else if (rank === 2) {
+    displayEmoji = "🪖";
+    displayBadge = "Loyal Soldier";
+  }
+
+  // Savage Line Generator for #1
+  let savageLine = "Trying to get noticed";
+  if (rg.dominance > 50) savageLine = "This guy replies before you even finish tweeting 💀";
+  else if (rg.dominance > 30) savageLine = "Bro is basically on your payroll at this point";
+  else if (loyaltyPct > 60) savageLine = "Loyal soldier reporting for duty 🪖";
+  else if (rg.replies >= 3) savageLine = "Always lurking… always replying 👀";
+
+  // Addiction Score for #1 (cap at 100)
+  const addictionScore = Math.min(100, Math.round((rg.dominance * 0.4) + (loyaltyPct * 0.6) + (rg.replies * 2)));
+
+  const animationDelay = `${0 + (rank * 0.15)}s`;
 
   return (
-    <li className="reply-guy-item" aria-label={`Rank ${rank + 1}: @${rg.user}`}>
+    <li 
+      className={`reply-guy-item animate-reveal ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`} 
+      aria-label={`Rank ${rank + 1}: @${rg.user}`}
+      style={{ animationDelay }}
+    >
       <span className="reply-guy-rank" aria-hidden>
         {RANK_MEDALS[rank] ?? `#${rank + 1}`}
       </span>
@@ -217,25 +271,34 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
       <div className="reply-guy-main">
         <div className="reply-guy-user">
           <span className="reply-guy-handle">@{rg.user}</span>
-          <span
-            className="reply-guy-badge"
-            style={{ color: rg.color, borderColor: `${rg.color}55` }}
-          >
-            {rg.badgeEmoji} {rg.badge}
-          </span>
+          {!isCompact && (
+            <span
+              className="reply-guy-badge"
+              style={{ color: rg.color, borderColor: isHero ? "transparent" : `${rg.color}55` }}
+            >
+              {displayEmoji} {displayBadge}
+            </span>
+          )}
         </div>
+        
+        {isHero && (
+          <div className="savage-line">
+            "{savageLine}"
+          </div>
+        )}
+
         <div className="reply-guy-meta">
-          <span className="font-bold text-amber-400">{rg.score} pts</span>
-          <span className="reply-guy-meta-dot" aria-hidden />
-          <span>{rg.tweets_replied} tweet{rg.tweets_replied !== 1 ? "s" : ""}</span>
-          <span className="reply-guy-meta-dot" aria-hidden />
-          <span>{loyaltyPct}% loyal</span>
+          <span>{rg.replies} replies across {rg.tweets_replied} tweet{rg.tweets_replied !== 1 ? "s" : ""} ({loyaltyPct}% loyalty)</span>
         </div>
       </div>
 
-      <div className="reply-guy-stats">
-        <div className="reply-count">{rg.replies}</div>
-        <div className="reply-count-label">replies</div>
+      <div className="reply-guy-end">
+         {isHero && (
+           <div className="addiction-score">
+             <div className="addiction-num">{addictionScore}/100</div>
+             <div className="addiction-label">Addiction Score</div>
+           </div>
+         )}
       </div>
     </li>
   );

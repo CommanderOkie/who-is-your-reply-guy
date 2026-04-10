@@ -528,8 +528,10 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
     .sort((a, b) => b.score - a.score || b.replies - a.replies)
     .slice(0, 5);
 
+  const totalTop5Replies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
+
   const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
-    const dominance = total > 0 ? Math.round((rg.replies / total) * 100) : 0;
+    const dominance = totalTop5Replies > 0 ? Math.round((rg.replies / totalTop5Replies) * 100) : 0;
     const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
     const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
     return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };

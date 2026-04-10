@@ -861,3 +861,128 @@ body {
   margin-top: 40px;
   letter-spacing: 0.02em;
 }
+
+/* ─── Viral UX Enhancements ─── */
+.animate-reveal {
+  opacity: 0;
+  animation: slideUpFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hero #1 Card Style */
+.hero-reply-card {
+  position: relative;
+  padding: 24px 20px !important;
+  background: linear-gradient(180deg, rgba(168,85,247,0.08) 0%, rgba(255,255,255,0.01) 100%);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.hero-reply-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  background: linear-gradient(135deg, rgba(168,85,247,0.8), rgba(59,130,246,0.8), transparent 60%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.hero-reply-card .reply-guy-handle {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.savage-line {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  color: #fbbf24;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.addiction-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.addiction-num {
+  font-size: 1.6rem;
+  font-weight: 900;
+  font-family: "Space Grotesk", sans-serif;
+  color: #f472b6;
+  text-shadow: 0 0 10px rgba(244,114,182,0.4);
+  line-height: 1;
+}
+
+.addiction-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* Medium & Compact Styles */
+.medium-reply-card {
+  padding: 18px 20px !important;
+  background: rgba(255,255,255,0.02);
+}
+
+.medium-reply-card .reply-guy-handle {
+  font-size: 1.1rem;
+}
+
+.compact-reply-card {
+  padding: 12px 20px !important;
+}
+
+.compact-reply-card .reply-guy-handle {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.compact-reply-card .reply-guy-rank {
+  font-size: 1.2rem;
+  opacity: 0.6;
+}
+
+/* Expose Button */
+.action-btn-expose {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.action-btn-expose:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2);
+}
+
+/* CTA Loop */
+.cta-loop {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 16px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}

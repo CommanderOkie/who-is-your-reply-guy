@@ -5,11 +5,7 @@ import ResultCard from "./components/ResultCard";
 import { AnalyzeResult } from "@/lib/twitter";
 
 const LOADING_STEPS = [
-  { text: "Stalking their mentions...", icon: "👀" },
-  { text: "Finding the reply farmers...", icon: "🌾" },
-  { text: "Counting the glazers...", icon: "🫡" },
-  { text: "Ranking the simps...", icon: "💀" },
-  { text: "Assembling the evidence...", icon: "🔍" },
+  { text: "Scanning replies... 👀", icon: "👀" },
 ];
 
 const EXAMPLE_ACCOUNTS = ["sama", "naval", "paulg", "levelsio", "piratewires"];
