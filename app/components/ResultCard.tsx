@@ -74,8 +74,8 @@ export default function ResultCard({ result }: Props) {
   const shareOnX = () => {
     const top = result.top_reply_guys[0];
     const text = top
-      ? `I just exposed my reply guy 💀\n\n👑 @${top.user} replies to EVERYTHING I tweet\n(${top.loyaltyScore}% loyalty is insane 😭)\n\nCheck yours 👇`
-      : `Who's living rent-free in @${result.username}'s replies? 👀 I just checked! 👇`;
+      ? `I just exposed my reply guy 💀\n\n👑 @${top.user} replies to EVERYTHING I tweet\n(${top.loyaltyScore}% loyalty is insane 😭)\n\nCheck yours 👇\nhttps://who-is-your-reply-guy.vercel.app`
+      : `Who's living rent-free in @${result.username}'s replies? 👀 I just checked! 👇\nwho-is-your-reply-guy.vercel.app`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
   };
@@ -214,9 +214,9 @@ export default function ResultCard({ result }: Props) {
             𝕏 Share on X
           </button>
         </div>
-        
+
         <div className="cta-loop">
-           Now check your friends 👇
+          Now check your friends 👇
         </div>
       </div>
     </section>
@@ -226,7 +226,7 @@ export default function ResultCard({ result }: Props) {
 // ─── Individual reply guy row ───────────────────────────────────────────────
 function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
   const loyaltyPct = rg.loyaltyScore;
-  
+
   // Apply specific UI roles
   const isHero = rank === 0;
   const isMedium = rank === 1 || rank === 2;
@@ -259,8 +259,8 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
   const animationDelay = `${0 + (rank * 0.15)}s`;
 
   return (
-    <li 
-      className={`reply-guy-item animate-reveal ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`} 
+    <li
+      className={`reply-guy-item animate-reveal ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`}
       aria-label={`Rank ${rank + 1}: @${rg.user}`}
       style={{ animationDelay }}
     >
@@ -280,7 +280,7 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
             </span>
           )}
         </div>
-        
+
         {isHero && (
           <div className="savage-line">
             "{savageLine}"
@@ -293,12 +293,12 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
       </div>
 
       <div className="reply-guy-end">
-         {isHero && (
-           <div className="addiction-score">
-             <div className="addiction-num">{addictionScore}/100</div>
-             <div className="addiction-label">Addiction Score</div>
-           </div>
-         )}
+        {isHero && (
+          <div className="addiction-score">
+            <div className="addiction-num">{addictionScore}/100</div>
+            <div className="addiction-label">Addiction Score</div>
+          </div>
+        )}
       </div>
     </li>
   );
