@@ -1,0 +1,493 @@
+/**
+ * Twitter/X authenticated scraper.
+ *
+ * Uses burner account cookies (TWITTER_COOKIES env var) to make authenticated
+ * requests to X's internal GraphQL API — no official API key needed.
+ *
+ * Features:
+ * - Query IDs auto-discovered from X's JS bundles and cached 2h
+ * - Results cached 10 min per username
+ * - Parallel reply fetching (3 concurrent) for speed
+ * - Handles 15 tweets by default
+ */
+
+import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
+
+const BEARER_TOKEN =
+  "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+
+const TWEETS_TO_ANALYZE = 20;   // last N original tweets to check
+const CONCURRENCY = 4;           // parallel TweetDetail fetches
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface ReplyGuy {
+  user: string;
+  replies: number;
+  tweets_replied: number;
+  dominance: number;
+  loyaltyScore: number;
+  badge: string;
+  badgeEmoji: string;
+  color: string;
+}
+
+export interface AnalyzeResult {
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  top_reply_guys: ReplyGuy[];
+  total_replies_analyzed: number;
+  tweets_analyzed: number;
+  disclaimer: string;
+  cached?: boolean;
+}
+
+// ─── Query ID management ──────────────────────────────────────────────────────
+
+const DEFAULT_IDS = {
+  UserByScreenName: "IGgvgiOx4QZndDHuD3x9TQ",
+  UserTweets: "x3B_xLqC0yZawOB7WQhaVQ",
+  TweetDetail: "rU08O-YiXdr0IZfE7qaUMg",
+};
+
+type QueryIds = typeof DEFAULT_IDS;
+
+async function getQueryIds(): Promise<QueryIds> {
+  const cached = queryIdCache.get("ids") as QueryIds | null;
+  if (cached) return cached;
+
+  let ids = { ...DEFAULT_IDS };
+  try {
+    const html = await fetch("https://x.com", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(5000),
+    }).then((r) => r.text());
+
+    const bundles = [
+      ...new Set(
+        html.match(/https:\/\/abs\.twimg\.com\/responsive-web\/client-web\/[a-zA-Z0-9._-]+\.js/g) ?? []
+      ),
+    ];
+
+    const found: Partial<QueryIds> = {};
+    for (const url of bundles.slice(0, 10)) {
+      try {
+        const js = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(4000),
+        }).then((r) => r.text());
+
+        for (const op of Object.keys(ids) as (keyof QueryIds)[]) {
+          if (found[op]) continue;
+          const m = js.match(new RegExp(`queryId:"([^"]+)",operationName:"${op}"`));
+          if (m) found[op] = m[1];
+        }
+        if (Object.keys(found).length >= Object.keys(ids).length) break;
+      } catch { /* skip */ }
+    }
+
+    if (Object.keys(found).length >= 2) ids = { ...ids, ...found };
+  } catch (e) {
+    console.warn("[scraper] Query ID refresh skipped:", (e as Error).message);
+  }
+
+  queryIdCache.set("ids", ids, QUERY_ID_TTL);
+  console.log("[scraper] Query IDs:", ids);
+  return ids;
+}
+
+// ─── Headers ─────────────────────────────────────────────────────────────────
+
+function getServerCookies(): string {
+  const c = process.env.TWITTER_COOKIES;
+  if (!c || c.trim().length < 20 || c.includes("PASTE_YOUR")) {
+    throw new Error("TWITTER_COOKIES_NOT_SET");
+  }
+  return c.trim();
+}
+
+function buildHeaders(cookies: string): Record<string, string> {
+  const ct0 = cookies.match(/ct0=([^;]+)/)?.[1]?.trim() ?? "";
+  return {
+    Authorization: `Bearer ${BEARER_TOKEN}`,
+    Cookie: cookies,
+    "x-csrf-token": ct0,
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "x-twitter-client-language": "en",
+    "x-twitter-active-user": "yes",
+    "x-twitter-auth-type": "OAuth2Session",
+    Referer: "https://x.com/",
+    Origin: "https://x.com",
+    Accept: "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+  };
+}
+
+// ─── GQL helpers ──────────────────────────────────────────────────────────────
+
+// Features that make TweetDetail return 200 (422 without these)
+const GQL_FEATURES = encodeURIComponent(
+  JSON.stringify({
+    rweb_lists_timeline_redesign_enabled: true,
+    responsive_web_graphql_exclude_directive_enabled: true,
+    verified_phone_label_enabled: false,
+    creator_subscriptions_tweet_preview_api_enabled: true,
+    responsive_web_graphql_timeline_navigation_enabled: true,
+    responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+    tweetypie_unmention_optimization_enabled: true,
+    responsive_web_edit_tweet_api_enabled: true,
+    graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+    view_counts_everywhere_api_enabled: true,
+    longform_notetweets_consumption_enabled: true,
+    tweet_awards_web_tipping_enabled: false,
+    freedom_of_speech_not_reach_the_voters_act_enabled: true,
+    standardized_nudges_misinfo: true,
+    tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: false,
+    longform_notetweets_rich_text_read_enabled: true,
+    longform_notetweets_inline_media_enabled: false,
+    interactive_text_enabled: true,
+    responsive_web_text_conversations_enabled: false,
+    responsive_web_enhance_cards_enabled: false,
+  })
+);
+
+// fieldToggles required by TweetDetail
+const FIELD_TOGGLES = encodeURIComponent(
+  JSON.stringify({ withArticleRichContentState: false, withAuxiliaryUserLabels: false })
+);
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+async function gqlGet(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs = 8000
+): Promise<Response> {
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  if (res.status === 429) throw new Error("RATE_LIMITED");
+  if (res.status === 401 || res.status === 403) throw new Error("AUTH_FAILED");
+  return res;
+}
+
+// ─── User lookup ──────────────────────────────────────────────────────────────
+
+async function lookupUser(
+  username: string,
+  headers: Record<string, string>,
+  ids: QueryIds
+) {
+  const vars = encodeURIComponent(
+    JSON.stringify({ screen_name: username, withSafetyModeUserFields: true })
+  );
+  const res = await gqlGet(
+    `https://api.x.com/graphql/${ids.UserByScreenName}/UserByScreenName?variables=${vars}&features=${GQL_FEATURES}`,
+    headers
+  );
+  if (!res.ok) throw new Error(`User lookup failed (${res.status})`);
+
+  const data = await res.json();
+  const ur = data?.data?.user?.result;
+  if (!ur) throw new Error(`@${username} not found or account is private/suspended.`);
+
+  const core = (ur.core as Record<string, string>) ?? {};
+  const legacy = (ur.legacy as Record<string, string>) ?? {};
+  const av = (ur.avatar as Record<string, string>) ?? {};
+
+  return {
+    id: ur.rest_id as string,
+    handle: core.screen_name || legacy.screen_name || username,
+    name: core.name || legacy.name || username,
+    avatar: (av.image_url || legacy.profile_image_url_https || "").replace("_normal", "_400x400"),
+  };
+}
+
+// ─── Get user's original tweets ───────────────────────────────────────────────
+
+interface MinTweet { id: string; authorHandle: string }
+
+async function getUserTweets(
+  userId: string,
+  count: number,
+  headers: Record<string, string>,
+  ids: QueryIds
+): Promise<MinTweet[]> {
+  const vars = encodeURIComponent(
+    JSON.stringify({
+      userId,
+      count: count * 3,
+      includePromotedContent: false,
+      withQuickPromoteEligibilityTweetFields: true,
+      withVoice: true,
+      withV2Timeline: true,
+    })
+  );
+  const res = await gqlGet(
+    `https://api.x.com/graphql/${ids.UserTweets}/UserTweets?variables=${vars}&features=${GQL_FEATURES}`,
+    headers
+  );
+  if (!res.ok) throw new Error(`Tweet fetch failed (${res.status})`);
+
+  const data = await res.json();
+  const instructions: Array<{ type: string; entries?: unknown[] }> =
+    data?.data?.user?.result?.timeline?.timeline?.instructions ??
+    data?.data?.user?.result?.timeline_v2?.timeline?.instructions ??
+    [];
+
+  type Entry = {
+    entryId?: string;
+    content?: { itemContent?: { tweet_results?: { result?: unknown } } };
+  };
+
+  const entries = instructions
+    .flatMap((i) => (i.type === "TimelineAddEntries" ? ((i.entries ?? []) as Entry[]) : []));
+
+  const tweets: MinTweet[] = [];
+  for (const e of entries) {
+    if (!e.entryId?.startsWith("tweet-")) continue;
+    const r = e?.content?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+    if (!r) continue;
+    const t = parseTweet(r);
+    if (!t || t.isReply || t.isRetweet) continue;
+    tweets.push({ id: t.id, authorHandle: t.authorHandle });
+    if (tweets.length >= count) break;
+  }
+  return tweets;
+}
+
+function parseTweet(result: Record<string, unknown>) {
+  try {
+    const actual = (
+      result.__typename === "TweetWithVisibilityResults"
+        ? (result.tweet as Record<string, unknown>)
+        : result
+    ) as Record<string, unknown>;
+
+    const legacy = actual.legacy as Record<string, unknown> | undefined;
+    if (!legacy) return null;
+
+    const core = actual.core as Record<string, unknown> | undefined;
+    const cu = (core?.user_results as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
+    const cuc = cu?.core as Record<string, unknown> | undefined;
+    const authorHandle =
+      (cuc?.screen_name as string) || ((cu?.legacy as Record<string, unknown>)?.screen_name as string) || "";
+
+    return {
+      id: actual.rest_id as string,
+      authorHandle,
+      isReply: !!legacy.in_reply_to_status_id_str,
+      isRetweet: ((legacy.full_text as string) || "").startsWith("RT @"),
+    };
+  } catch { return null; }
+}
+
+// ─── Get tweet replies (TweetDetail) ──────────────────────────────────────────
+
+async function getTweetReplies(
+  tweetId: string,
+  targetHandle: string,
+  headers: Record<string, string>,
+  ids: QueryIds
+): Promise<string[]> {
+  const vars = encodeURIComponent(
+    JSON.stringify({
+      focalTweetId: tweetId,
+      referrer: "tweet",
+      count: 40,
+      with_rux_injections: false,
+      includePromotedContent: true,
+      withCommunity: true,
+      withQuickPromoteEligibilityTweetFields: true,
+      withBirdwatchNotes: true,
+      withVoice: true,
+    })
+  );
+
+  const url = `https://api.x.com/graphql/${ids.TweetDetail}/TweetDetail?variables=${vars}&features=${GQL_FEATURES}&fieldToggles=${FIELD_TOGGLES}`;
+  let res: Response;
+  try {
+    res = await gqlGet(url, headers, 9000);
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg === "RATE_LIMITED" || msg === "AUTH_FAILED") throw err;
+    return []; // timeout or network error → skip this tweet
+  }
+
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const instructions: Array<{ type: string; entries?: unknown[] }> =
+    data?.data?.threaded_conversation_with_injections_v2?.instructions ?? [];
+
+  type ConvEntry = {
+    entryId?: string;
+    content?: {
+      itemContent?: { tweet_results?: { result?: unknown } };
+      items?: Array<{ item?: { itemContent?: { tweet_results?: { result?: unknown } } } }>;
+    };
+  };
+
+  const entries = instructions.flatMap((i) =>
+    i.type === "TimelineAddEntries" ? ((i.entries ?? []) as ConvEntry[]) : []
+  );
+
+  const repliers: string[] = [];
+  for (const entry of entries) {
+    const items = entry.content?.items ?? [];
+    const all = [
+      entry.content?.itemContent?.tweet_results?.result,
+      ...items.map((it) => it.item?.itemContent?.tweet_results?.result),
+    ].filter(Boolean) as Record<string, unknown>[];
+
+    for (const r of all) {
+      const leg =
+        (r.legacy as Record<string, unknown>) ||
+        ((r.tweet as Record<string, unknown>)?.legacy as Record<string, unknown>);
+      if ((leg?.in_reply_to_status_id_str as string) !== tweetId) continue;
+
+      const core = (r.core ?? (r.tweet as Record<string,unknown>)?.core) as Record<string, unknown> | undefined;
+      const coreUser = (core?.user_results as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
+      const coreUserCore = coreUser?.core as Record<string, unknown> | undefined;
+      const handle: string =
+        (coreUserCore?.screen_name as string) ||
+        ((coreUser?.legacy as Record<string, unknown>)?.screen_name as string) ||
+        "";
+
+      if (handle && handle.toLowerCase() !== targetHandle.toLowerCase()) {
+        repliers.push(handle.toLowerCase());
+      }
+    }
+  }
+  return repliers;
+}
+
+// ─── Parallel batch helper ────────────────────────────────────────────────────
+
+async function fetchRepliesParallel(
+  tweets: MinTweet[],
+  targetHandle: string,
+  headers: Record<string, string>,
+  ids: QueryIds
+): Promise<{ replyCounts: Record<string, { count: number; tweetIds: Set<string> }>; total: number; rateLimited: boolean }> {
+  const replyCounts: Record<string, { count: number; tweetIds: Set<string> }> = {};
+  let total = 0;
+  let rateLimited = false;
+
+  // Process tweets in batches of CONCURRENCY
+  for (let i = 0; i < tweets.length; i += CONCURRENCY) {
+    if (rateLimited) break;
+    const batch = tweets.slice(i, i + CONCURRENCY);
+
+    const results = await Promise.allSettled(
+      batch.map((t) => getTweetReplies(t.id, targetHandle, headers, ids))
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      if (r.status === "rejected") {
+        if ((r.reason as Error)?.message === "RATE_LIMITED") rateLimited = true;
+        if ((r.reason as Error)?.message === "AUTH_FAILED") throw new Error("AUTH_FAILED");
+        continue;
+      }
+      for (const handle of r.value) {
+        if (!replyCounts[handle]) replyCounts[handle] = { count: 0, tweetIds: new Set() };
+        replyCounts[handle].count++;
+        replyCounts[handle].tweetIds.add(batch[j].id);
+        total++;
+      }
+    }
+
+    // Small cooldown between batches to avoid hammering X
+    if (i + CONCURRENCY < tweets.length && !rateLimited) {
+      await sleep(400);
+    }
+  }
+
+  return { replyCounts, total, rateLimited };
+}
+
+// ─── Badges ───────────────────────────────────────────────────────────────────
+
+const BADGES = [
+  { minReplies: 8, minLoyalty: 0.5, badge: "Reply Merchant", emoji: "🫡", color: "#a855f7" },
+  { minReplies: 5, minLoyalty: 0.4, badge: "Loyal Soldier", emoji: "🪖", color: "#3b82f6" },
+  { minReplies: 3, minLoyalty: 0.3, badge: "Early Reply Demon", emoji: "💀", color: "#ef4444" },
+  { minReplies: 2, minLoyalty: 0.0, badge: "Glazing Hard", emoji: "🥹", color: "#f59e0b" },
+  { minReplies: 0, minLoyalty: 0.0, badge: "Trying Hard", emoji: "😤", color: "#6b7280" },
+];
+
+function assignBadge(replies: number, loyalty: number, rank: number) {
+  if (rank === 0) return { badge: "Reply Merchant", emoji: "🫡", color: "#a855f7" };
+  for (const t of BADGES) {
+    if (replies >= t.minReplies && loyalty >= t.minLoyalty)
+      return { badge: t.badge, emoji: t.emoji, color: t.color };
+  }
+  return { badge: "Trying Hard", emoji: "😤", color: "#6b7280" };
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult> {
+  const clean = username.replace(/^@/, "").trim().toLowerCase();
+  if (!clean || !/^[a-zA-Z0-9_]{1,50}$/.test(clean)) {
+    throw new Error("Invalid username. Only letters, numbers and underscores allowed.");
+  }
+
+  // Cache check
+  const cacheKey = `result:${clean}`;
+  const cached = resultCache.get(cacheKey) as AnalyzeResult | null;
+  if (cached) return { ...cached, cached: true };
+
+  const cookies = getServerCookies();
+  const headers = buildHeaders(cookies);
+  const ids = await getQueryIds();
+
+  // 1. Look up user
+  const user = await lookupUser(clean, headers, ids);
+
+  // 2. Get original tweets
+  const tweets = await getUserTweets(user.id, TWEETS_TO_ANALYZE, headers, ids);
+  if (tweets.length === 0) {
+    throw new Error(`No original tweets found for @${clean}. The account may be private or have no recent posts.`);
+  }
+
+  // 3. Parallel-fetch replies for all tweets
+  const { replyCounts, total, rateLimited } = await fetchRepliesParallel(
+    tweets, clean, headers, ids
+  );
+
+  if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
+
+  // 4. Sort and rank top 5
+  const sorted = Object.entries(replyCounts)
+    .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size }))
+    .filter((u) => u.replies > 0)
+    .sort((a, b) => b.replies - a.replies || b.tweets_replied - a.tweets_replied)
+    .slice(0, 5);
+
+  const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
+    const dominance = total > 0 ? Math.round((rg.replies / total) * 100) : 0;
+    const loyalty = tweets.length > 0 ? parseFloat((rg.tweets_replied / tweets.length).toFixed(2)) : 0;
+    const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
+    return { ...rg, dominance, loyaltyScore: loyalty, badge, badgeEmoji: emoji, color };
+  });
+
+  const result: AnalyzeResult = {
+    username: clean,
+    displayName: user.name,
+    avatarUrl: user.avatar,
+    top_reply_guys,
+    total_replies_analyzed: total,
+    tweets_analyzed: tweets.length,
+    disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
+  };
+
+  resultCache.set(cacheKey, result, RESULT_TTL);
+  return result;
+}
