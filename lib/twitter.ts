@@ -17,7 +17,7 @@ const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
 const TWEETS_TO_ANALYZE = 20;   // kept at 20 for maximum accuracy (requires multi-cookie rotation)
-const CONCURRENCY = 4;           // parallel TweetDetail fetches
+const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -476,7 +476,8 @@ async function fetchRepliesParallel(
     }
 
     if (i + CONCURRENCY < tweets.length && !rateLimited) {
-      await sleep(400);
+      // Throttle dramatically between batches to prevent X from auto-banning the cookie
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 
