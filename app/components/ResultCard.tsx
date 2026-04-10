@@ -14,6 +14,7 @@ export default function ResultCard({ result }: Props) {
   const [downloading, setDownloading] = useState(false);
   const [copying, setCopying] = useState(false);
   const [animateBars, setAnimateBars] = useState(false);
+  const [showCriteria, setShowCriteria] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setAnimateBars(true), 300);
@@ -216,9 +217,32 @@ export default function ResultCard({ result }: Props) {
         </div>
 
         <div className="cta-loop">
-          Now check your friends 👇
+           Now check your friends 👇
         </div>
+
+        <button 
+          className="criteria-toggle-btn"
+          onClick={() => setShowCriteria(true)}
+        >
+          ℹ️ How is this calculated?
+        </button>
       </div>
+
+      {showCriteria && (
+        <div className="criteria-modal-overlay" onClick={() => setShowCriteria(false)}>
+          <div className="criteria-modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="criteria-close-btn" onClick={() => setShowCriteria(false)}>✕</button>
+            <h3 className="criteria-title">📊 The Obsession Algorithm</h3>
+            <p className="criteria-desc">This tool doesn't just count replies—it calculates a weighted <strong>Addiction Score</strong> by analyzing the exact milliseconds of interaction.</p>
+            <ul className="criteria-list">
+              <li><strong>Spam Cap 🚫</strong><br/>Users only get points for the <em>first</em> reply on each unique tweet. Spamming the same post 50 times yields exactly 0 extra points.</li>
+              <li><strong>Base Points +100</strong><br/>Just showing up and interacting secures the base rank.</li>
+              <li><strong>Speed Bonus ⚡</strong><br/>+100 points for replying within 5 minutes of a tweet. +50 for under an hour. Only +20 if it takes over 6 hours.</li>
+              <li><strong>Author Engaged 💬</strong><br/>+250 massive bonus points if the original author replied <em>back</em> to them in that exact thread!</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
