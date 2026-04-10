@@ -8,7 +8,7 @@ const LOADING_STEPS = [
   { text: "Scanning replies... 👀", icon: "👀" },
 ];
 
-const EXAMPLE_ACCOUNTS = ["sama", "naval", "paulg", "levelsio", "piratewires"];
+const EXAMPLE_ACCOUNTS = ["medusaonchain", "waleswoosh", "mayamaster", "sama", "okiewins"];
 
 export default function Home() {
   const [username, setUsername] = useState("");
@@ -226,10 +226,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Footer ── */}
       <footer className="site-footer">
         Not affiliated with X / Twitter &middot; For entertainment only<br />
-        <span style={{ opacity: 0.7, marginTop: "8px", display: "inline-block" }}>Made by Avee</span>
+        <a 
+          href="https://x.com/okiewins" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          style={{ opacity: 0.7, marginTop: "8px", display: "inline-block", color: "inherit", textDecoration: "underline" }}
+        >
+          Made by Avee
+        </a>
       </footer>
     </main>
   );

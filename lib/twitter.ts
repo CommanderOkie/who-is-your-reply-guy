@@ -225,45 +225,63 @@ async function getUserTweets(
   headers: Record<string, string>,
   ids: QueryIds
 ): Promise<MinTweet[]> {
-  const vars = encodeURIComponent(
-    JSON.stringify({
-      userId,
-      count: 100, // Maximized API chunk size to scrape deep into history
-      includePromotedContent: false,
-      withQuickPromoteEligibilityTweetFields: true,
-      withVoice: true,
-      withV2Timeline: true,
-    })
-  );
-  const res = await gqlGet(
-    `https://api.x.com/graphql/${ids.UserTweets}/UserTweets?variables=${vars}&features=${GQL_FEATURES}`,
-    headers
-  );
-  if (!res.ok) throw new Error(`Tweet fetch failed (${res.status})`);
-
-  const data = await res.json();
-  const instructions: Array<{ type: string; entries?: unknown[] }> =
-    data?.data?.user?.result?.timeline?.timeline?.instructions ??
-    data?.data?.user?.result?.timeline_v2?.timeline?.instructions ??
-    [];
-
-  type Entry = {
-    entryId?: string;
-    content?: { itemContent?: { tweet_results?: { result?: unknown } } };
-  };
-
-  const entries = instructions
-    .flatMap((i) => (i.type === "TimelineAddEntries" ? ((i.entries ?? []) as Entry[]) : []));
-
   const tweets: MinTweet[] = [];
-  for (const e of entries) {
-    if (!e.entryId?.startsWith("tweet-")) continue;
-    const r = e?.content?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
-    if (!r) continue;
-    const t = parseTweet(r);
-    if (!t || t.isReply || t.isRetweet) continue;
-    tweets.push({ id: t.id, authorHandle: t.authorHandle, createdAt: t.createdAt });
+  let cursor: string | undefined = undefined;
+
+  // Search up to 4 pages deep to find enough original tweets
+  for (let page = 0; page < 4; page++) {
+    const vars = encodeURIComponent(
+      JSON.stringify({
+        userId,
+        count: 100,
+        cursor,
+        includePromotedContent: false,
+        withQuickPromoteEligibilityTweetFields: true,
+        withVoice: true,
+        withV2Timeline: true,
+      })
+    );
+    const res = await gqlGet(
+      `https://api.x.com/graphql/${ids.UserTweets}/UserTweets?variables=${vars}&features=${GQL_FEATURES}`,
+      headers
+    );
+    if (!res.ok) throw new Error(`Tweet fetch failed (${res.status})`);
+
+    const data = await res.json();
+    const instructions: Array<{ type: string; entries?: unknown[] }> =
+      data?.data?.user?.result?.timeline?.timeline?.instructions ??
+      data?.data?.user?.result?.timeline_v2?.timeline?.instructions ??
+      [];
+
+    type Entry = {
+      entryId?: string;
+      content?: { value?: string; itemContent?: { value?: string; tweet_results?: { result?: unknown } } };
+    };
+
+    const entries = instructions
+      .flatMap((i) => (i.type === "TimelineAddEntries" ? ((i.entries ?? []) as Entry[]) : []));
+
+    for (const e of entries) {
+      if (!e.entryId?.startsWith("tweet-")) continue;
+      const r = e?.content?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+      if (!r) continue;
+      const t = parseTweet(r);
+      if (!t || t.isReply || t.isRetweet) continue;
+      
+      // Ensure we don't push duplicates
+      if (!tweets.some(tw => tw.id === t.id)) {
+        tweets.push({ id: t.id, authorHandle: t.authorHandle, createdAt: t.createdAt });
+      }
+      if (tweets.length >= count) break;
+    }
+
     if (tweets.length >= count) break;
+
+    // Find next page cursor
+    const bottomCursor = entries.find(e => e.entryId?.startsWith("cursor-bottom-"));
+    const nextCursor = bottomCursor?.content?.value || bottomCursor?.content?.itemContent?.value;
+    if (!nextCursor) break; // Reached end of history
+    cursor = nextCursor;
   }
   return tweets;
 }
