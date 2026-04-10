@@ -75,7 +75,7 @@ export default function ResultCard({ result }: Props) {
   const shareOnX = () => {
     const top = result.top_reply_guys[0];
     const text = top
-      ? `🚨 I just checked who's living rent-free in @${result.username}'s mentions!\n\n👑 #1 Reply Guy: @${top.user} with ${top.replies} replies! (${Math.round(top.loyaltyScore * 100)}% loyalty 😭)\n\nCheck who your Reply Guys are here 👇👀`
+      ? `🚨 I just checked who's living rent-free in @${result.username}'s mentions!\n\n👑 #1 Reply Guy: @${top.user} with ${top.replies} replies! (${top.loyaltyScore}% loyalty 😭)\n\nCheck who your Reply Guys are here 👇👀`
       : `Who's living rent-free in @${result.username}'s replies? 👀 I just checked! 👇`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
 
@@ -206,7 +206,7 @@ export default function ResultCard({ result }: Props) {
 
 // ─── Individual reply guy row ───────────────────────────────────────────────
 function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
-  const loyaltyPct = Math.round(rg.loyaltyScore * 100);
+  const loyaltyPct = rg.loyaltyScore;
 
   return (
     <li className="reply-guy-item" aria-label={`Rank ${rank + 1}: @${rg.user}`}>

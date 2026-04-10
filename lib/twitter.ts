@@ -415,25 +415,25 @@ async function fetchRepliesParallel(
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
 const BADGES = [
-  { minReplies: 15, minLoyalty: 0.6, badge: "Reply God", emoji: "👑", color: "#fbbf24" },
-  { minReplies: 10, minLoyalty: 0.5, badge: "Certified Glazer", emoji: "🍩", color: "#f472b6" },
-  { minReplies: 7, minLoyalty: 0.4, badge: "Professional Yapper", emoji: "🗣️", color: "#a855f7" },
-  { minReplies: 5, minLoyalty: 0.3, badge: "Loyal Soldier", emoji: "🪖", color: "#3b82f6" },
-  { minReplies: 3, minLoyalty: 0.2, badge: "Reply Demon", emoji: "💀", color: "#ef4444" },
-  { minReplies: 2, minLoyalty: 0.0, badge: "Fan Behavior", emoji: "👀", color: "#f59e0b" },
-  { minReplies: 0, minLoyalty: 0.0, badge: "Just Happy To Be Here", emoji: "🥹", color: "#6b7280" },
+  { minReplies: 15, minLoyalty: 60, badge: "Reply God", emoji: "👑", color: "#fbbf24" },
+  { minReplies: 10, minLoyalty: 50, badge: "Certified Glazer", emoji: "🍩", color: "#f472b6" },
+  { minReplies: 7, minLoyalty: 40, badge: "Professional Yapper", emoji: "🗣️", color: "#a855f7" },
+  { minReplies: 5, minLoyalty: 30, badge: "Loyal Soldier", emoji: "🪖", color: "#3b82f6" },
+  { minReplies: 3, minLoyalty: 20, badge: "Reply Demon", emoji: "💀", color: "#ef4444" },
+  { minReplies: 2, minLoyalty: 0, badge: "Fan Behavior", emoji: "👀", color: "#f59e0b" },
+  { minReplies: 0, minLoyalty: 0, badge: "Just Happy To Be Here", emoji: "🥹", color: "#6b7280" },
 ];
 
 function assignBadge(replies: number, loyalty: number, rank: number) {
   let matchedBadge = BADGES[BADGES.length - 1];
   for (const t of BADGES) {
     if (replies >= t.minReplies && loyalty >= t.minLoyalty) {
-      matchedBadge = { badge: t.badge, emoji: t.emoji, color: t.color, minReplies: t.minReplies };
+      matchedBadge = t;
       break;
     }
   }
   
-  if (rank === 0 && (matchedBadge.minReplies ?? 0) < 5) {
+  if (rank === 0 && matchedBadge.minReplies < 5) {
     return { badge: "Number 1 Fan", emoji: "🥇", color: "#a855f7" };
   }
   return { badge: matchedBadge.badge, emoji: matchedBadge.emoji, color: matchedBadge.color };
@@ -481,7 +481,7 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
 
   const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
     const dominance = total > 0 ? Math.round((rg.replies / total) * 100) : 0;
-    const loyalty = tweets.length > 0 ? parseFloat((rg.tweets_replied / tweets.length).toFixed(2)) : 0;
+    const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
     const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
     return { ...rg, dominance, loyaltyScore: loyalty, badge, badgeEmoji: emoji, color };
   });
