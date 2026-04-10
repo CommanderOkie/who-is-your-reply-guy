@@ -16,7 +16,7 @@ import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 40;   // last N original tweets to check
+const TWEETS_TO_ANALYZE = 20;   // lowered to 20 to preserve burner account limits
 const CONCURRENCY = 4;           // parallel TweetDetail fetches
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -111,7 +111,11 @@ function getServerCookies(): string {
   if (!c || c.trim().length < 20 || c.includes("PASTE_YOUR")) {
     throw new Error("TWITTER_COOKIES_NOT_SET");
   }
-  return c.trim();
+  const pools = c.split("\n").map(l => l.trim()).filter(l => l.length > 20);
+  if (pools.length === 0) throw new Error("TWITTER_COOKIES_NOT_SET");
+  
+  // Randomly rotate to circumvent 150/15m limit per account
+  return pools[Math.floor(Math.random() * pools.length)];
 }
 
 function buildHeaders(cookies: string): Record<string, string> {
