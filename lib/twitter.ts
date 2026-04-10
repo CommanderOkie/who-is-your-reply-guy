@@ -16,7 +16,7 @@ import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 20;   // last N original tweets to check
+const TWEETS_TO_ANALYZE = 30;   // last N original tweets to check
 const CONCURRENCY = 4;           // parallel TweetDetail fetches
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -415,20 +415,28 @@ async function fetchRepliesParallel(
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
 const BADGES = [
-  { minReplies: 8, minLoyalty: 0.5, badge: "Reply Merchant", emoji: "🫡", color: "#a855f7" },
-  { minReplies: 5, minLoyalty: 0.4, badge: "Loyal Soldier", emoji: "🪖", color: "#3b82f6" },
-  { minReplies: 3, minLoyalty: 0.3, badge: "Early Reply Demon", emoji: "💀", color: "#ef4444" },
-  { minReplies: 2, minLoyalty: 0.0, badge: "Glazing Hard", emoji: "🥹", color: "#f59e0b" },
-  { minReplies: 0, minLoyalty: 0.0, badge: "Trying Hard", emoji: "😤", color: "#6b7280" },
+  { minReplies: 15, minLoyalty: 0.6, badge: "Reply God", emoji: "👑", color: "#fbbf24" },
+  { minReplies: 10, minLoyalty: 0.5, badge: "Certified Glazer", emoji: "🍩", color: "#f472b6" },
+  { minReplies: 7, minLoyalty: 0.4, badge: "Professional Yapper", emoji: "🗣️", color: "#a855f7" },
+  { minReplies: 5, minLoyalty: 0.3, badge: "Loyal Soldier", emoji: "🪖", color: "#3b82f6" },
+  { minReplies: 3, minLoyalty: 0.2, badge: "Reply Demon", emoji: "💀", color: "#ef4444" },
+  { minReplies: 2, minLoyalty: 0.0, badge: "Fan Behavior", emoji: "👀", color: "#f59e0b" },
+  { minReplies: 0, minLoyalty: 0.0, badge: "Just Happy To Be Here", emoji: "🥹", color: "#6b7280" },
 ];
 
 function assignBadge(replies: number, loyalty: number, rank: number) {
-  if (rank === 0) return { badge: "Reply Merchant", emoji: "🫡", color: "#a855f7" };
+  let matchedBadge = BADGES[BADGES.length - 1];
   for (const t of BADGES) {
-    if (replies >= t.minReplies && loyalty >= t.minLoyalty)
-      return { badge: t.badge, emoji: t.emoji, color: t.color };
+    if (replies >= t.minReplies && loyalty >= t.minLoyalty) {
+      matchedBadge = { badge: t.badge, emoji: t.emoji, color: t.color, minReplies: t.minReplies };
+      break;
+    }
   }
-  return { badge: "Trying Hard", emoji: "😤", color: "#6b7280" };
+  
+  if (rank === 0 && (matchedBadge.minReplies ?? 0) < 5) {
+    return { badge: "Number 1 Fan", emoji: "🥇", color: "#a855f7" };
+  }
+  return { badge: matchedBadge.badge, emoji: matchedBadge.emoji, color: matchedBadge.color };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
