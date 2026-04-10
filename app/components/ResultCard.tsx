@@ -225,9 +225,11 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
           </span>
         </div>
         <div className="reply-guy-meta">
-          <span>{rg.tweets_replied} tweet{rg.tweets_replied !== 1 ? "s" : ""} replied</span>
+          <span className="font-bold text-amber-400">{rg.score} pts</span>
           <span className="reply-guy-meta-dot" aria-hidden />
-          <span>{loyaltyPct}% loyalty</span>
+          <span>{rg.tweets_replied} tweet{rg.tweets_replied !== 1 ? "s" : ""}</span>
+          <span className="reply-guy-meta-dot" aria-hidden />
+          <span>{loyaltyPct}% loyal</span>
         </div>
       </div>
 
