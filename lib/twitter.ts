@@ -11,12 +11,13 @@
  * - Handles 15 tweets by default
  */
 
-import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
+import { queryIdCache, QUERY_ID_TTL } from "./cache";
+import { unstable_cache } from "next/cache";
 
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 20;   // kept at 20 for maximum accuracy (requires multi-cookie rotation)
+const TWEETS_TO_ANALYZE = 7;   // Severely cut from 20 to 7 to natively survive > 2.4k viral requests per hr
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // --- Auto-Heal Load Balancer State ---
@@ -545,15 +546,24 @@ function assignBadge(replies: number, loyalty: number, rank: number) {
 
 export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult> {
   const clean = username.replace(/^@/, "").trim().toLowerCase();
+  
   if (!clean || !/^[a-zA-Z0-9_]{1,50}$/.test(clean)) {
     throw new Error("Invalid username. Only letters, numbers and underscores allowed.");
   }
 
-  // Cache check
-  const cacheKey = `result:${clean}`;
-  const cached = resultCache.get(cacheKey) as AnalyzeResult | null;
-  if (cached) return { ...cached, cached: true };
+  // Wrap the entire heavy scraping logic in Vercel's Global Edge Cache Storage
+  // This means the first person to search @okiewins globally pays the API cost
+  // The next 5,000 people to search it will instantly pull the JSON blob from Vercel's CDN (Zero Cost)
+  const getCachedAnalysis = unstable_cache(
+    async () => performActualScraping(clean),
+    [`reply-guy-analysis-${clean}`],
+    { revalidate: 3600 } // Global TTL: 1 hour before it hits your burner cookies again
+  );
 
+  return await getCachedAnalysis();
+}
+
+async function performActualScraping(clean: string): Promise<AnalyzeResult> {
   const cookies = getServerCookies();
   const headers = buildHeaders(cookies);
   const ids = await getQueryIds();
@@ -601,7 +611,6 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
       disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
     };
 
-    resultCache.set(cacheKey, result, RESULT_TTL);
     return result;
   } catch (err) {
     if (err instanceof Error && err.message === "RATE_LIMITED") {
