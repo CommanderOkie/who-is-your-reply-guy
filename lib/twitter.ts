@@ -16,7 +16,7 @@ import { resultCache, queryIdCache, RESULT_TTL, QUERY_ID_TTL } from "./cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 30;   // last N original tweets to check
+const TWEETS_TO_ANALYZE = 40;   // last N original tweets to check
 const CONCURRENCY = 4;           // parallel TweetDetail fetches
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ async function getUserTweets(
   const vars = encodeURIComponent(
     JSON.stringify({
       userId,
-      count: count * 3,
+      count: 100, // Maximized API chunk size to scrape deep into history
       includePromotedContent: false,
       withQuickPromoteEligibilityTweetFields: true,
       withVoice: true,
