@@ -1063,3 +1063,35 @@ body {
   color: #fff;
   margin-bottom: 4px;
 }
+
+/* ─── Elite 10 Image Split Logic ─── */
+.rendering-image .reply-guy-item:nth-child(n+6) {
+  display: none !important;
+}
+
+.footer-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.lurker-teaser {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-violet);
+  background: rgba(168, 85, 247, 0.1);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+  display: none;
+}
+
+.rendering-image .lurker-teaser {
+  display: block;
+}
+
+.is-exporting-active {
+  transition: opacity 0.2s ease;
+}

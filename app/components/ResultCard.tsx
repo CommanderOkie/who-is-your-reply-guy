@@ -3,7 +3,20 @@
 import { useRef, useState, useEffect } from "react";
 import { AnalyzeResult, ReplyGuy } from "@/lib/twitter";
 
-const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+
+const SAVAGE_LINES = [
+  "Bro is camping your notifications with a tent and a blanket 🏕️",
+  "I checked your screen time and it’s just this person’s profile 💀",
+  "This isn’t replying, this is a long-distance relationship 💍",
+  "Bro has a notification bell on your heart 🔔❤️",
+  "Your tweets are their 9-to-5 job and they’re doing overtime 💼",
+  "Bro refreshes your profile like it’s a restock 🛒",
+  "The definition of living rent-free in someone's head 🧠",
+  "If replying was a sport, this person would have 10 gold medals 🥇",
+  "Bro is your social media shadow 👤",
+  "Consistency is key, but this is just an obsession 📈"
+];
 
 interface Props {
   result: AnalyzeResult;
@@ -14,6 +27,7 @@ export default function ResultCard({ result, onReset }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [isExporting, setIsExporting] = useState(false); // To toggle visibility for image capture
   const [animateBars, setAnimateBars] = useState(false);
   const [showCriteria, setShowCriteria] = useState(false);
 
@@ -24,9 +38,14 @@ export default function ResultCard({ result, onReset }: Props) {
 
   const downloadCard = async () => {
     setDownloading(true);
+    setIsExporting(true);
     try {
       const { default: html2canvas } = await import("html2canvas");
       if (!cardRef.current) return;
+      
+      // Small pause for state to settle
+      await new Promise(r => setTimeout(r, 100));
+
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: "#111124",
         scale: 2,
@@ -43,14 +62,20 @@ export default function ResultCard({ result, onReset }: Props) {
       alert("Download failed. Try the copy button instead.");
     } finally {
       setDownloading(false);
+      setIsExporting(false);
     }
   };
 
   const copyCard = async () => {
     setCopying(true);
+    setIsExporting(true);
     try {
       const { default: html2canvas } = await import("html2canvas");
       if (!cardRef.current) return;
+      
+      // Small pause for state to settle
+      await new Promise(r => setTimeout(r, 100));
+
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: "#111124",
         scale: 2,
@@ -70,6 +95,7 @@ export default function ResultCard({ result, onReset }: Props) {
       alert("Copy failed. Try downloading instead.");
     } finally {
       setCopying(false);
+      setIsExporting(false);
     }
   };
 
@@ -96,7 +122,7 @@ export default function ResultCard({ result, onReset }: Props) {
     <section className="results-section" aria-label="Analysis results">
       <div className="card-wrapper">
         {/* The card */}
-        <div className="result-card" ref={cardRef} id="result-card">
+        <div className={`result-card ${isExporting ? "rendering-image" : ""}`} ref={cardRef} id="result-card">
           {/* Header */}
           <div className="card-header">
             {avatarUrl ? (
@@ -139,8 +165,8 @@ export default function ResultCard({ result, onReset }: Props) {
 
               {/* Dominance bars */}
               <div className="dominance-bars" data-html2canvas-ignore="true">
-                <div className="dominance-title">Reply Dominance</div>
-                {top_reply_guys.map((rg) => (
+                <div className="dominance-title">Global Analysis Power</div>
+                {top_reply_guys.slice(0, 5).map((rg) => (
                   <div key={rg.user} className="dominance-row">
                     <span className="dominance-user">@{rg.user}</span>
                     <div className="dominance-bar-track">
@@ -174,10 +200,17 @@ export default function ResultCard({ result, onReset }: Props) {
               </div>
               <div className="card-stat">
                 <div className="card-stat-num">{top_reply_guys.length}</div>
-                <div className="card-stat-label">Reply Guys</div>
+                <div className="card-stat-label">Detected</div>
               </div>
             </div>
-            <p className="card-disclaimer">{disclaimer}</p>
+            <div className="footer-right">
+               {top_reply_guys.length > 5 && (
+                 <div className="lurker-teaser">
+                   + {top_reply_guys.length - 5} more lurkers revealed on site 🕵️‍♂️
+                 </div>
+               )}
+               <p className="card-disclaimer">{disclaimer}</p>
+            </div>
           </div>
         </div>
 
@@ -266,8 +299,8 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
 
   // Apply specific UI roles
   const isHero = rank === 0;
-  const isMedium = rank === 1 || rank === 2;
-  const isCompact = rank === 3 || rank === 4;
+  const isMedium = rank >= 1 && rank <= 3;
+  const isCompact = rank >= 4;
 
   let displayEmoji = rg.badgeEmoji;
   let displayBadge = rg.badge;
@@ -283,12 +316,10 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
     displayBadge = "Loyal Soldier";
   }
 
-  // Savage Line Generator for #1
-  let savageLine = "Trying to get noticed";
-  if (rg.dominance > 50) savageLine = "This guy replies before you even finish tweeting 💀";
-  else if (rg.dominance > 30) savageLine = "Bro is basically on your payroll at this point";
-  else if (loyaltyPct > 60) savageLine = "Loyal soldier reporting for duty 🪖";
-  else if (rg.replies >= 3) savageLine = "Always lurking… always replying 👀";
+  // Savage Line Generator for #1 (Pick from pool)
+  const savageLine = isHero 
+    ? SAVAGE_LINES[Math.floor((rg.replies + rg.loyaltyScore) % SAVAGE_LINES.length)]
+    : "Trying to get noticed";
 
   // Addiction Score for #1 (cap at 100)
   const addictionScore = Math.min(100, Math.round((rg.dominance * 0.4) + (loyaltyPct * 0.6) + (rg.replies * 2)));

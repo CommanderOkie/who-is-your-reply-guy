@@ -585,17 +585,17 @@ async function performActualScraping(clean: string): Promise<AnalyzeResult> {
 
     if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
 
-    // 4. Sort and rank top 5
+    // 4. Sort and rank top 10
     const sorted = Object.entries(replyCounts)
       .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
       .filter((u) => u.replies > 0)
       .sort((a, b) => b.score - a.score || b.replies - a.replies)
-      .slice(0, 5);
+      .slice(0, 10);
 
-    const totalTop5Replies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
+    const totalTopReplies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
 
     const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
-      const dominance = totalTop5Replies > 0 ? Math.round((rg.replies / totalTop5Replies) * 100) : 0;
+      const dominance = totalTopReplies > 0 ? Math.round((rg.replies / totalTopReplies) * 100) : 0;
       const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
       const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
       return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
