@@ -47,6 +47,15 @@ export default function Home() {
         body: JSON.stringify({ username: raw }),
       });
 
+      // Auto-Polling REST Execution
+      if (res.status === 202) {
+        const data = await res.json();
+        setQueueMessage(`Waitlist: You are #${data.position} in queue. Waiting 4s... ⏳`);
+        // We do NOT set loading to false. We auto-retry in 4 seconds!
+        setTimeout(() => handleAnalyze(raw), 4000);
+        return;
+      }
+
       if (!res.ok) {
         try {
           const data = await res.json();
@@ -54,54 +63,30 @@ export default function Home() {
         } catch {
           setError("Server returned an error. Please try again.");
         }
+        setQueueMessage(null);
+        setLoading(false);
         return;
       }
 
-      if (!res.body) throw new Error("No response body.");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let done = false;
-      let buffer = "";
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const msg = JSON.parse(line);
-              if (msg.error) {
-                setError(msg.error);
-                setLoading(false);
-                return;
-              } else if (msg.type === "queue") {
-                setQueueMessage(`Waitlist: You are #${msg.position} in queue... ⏳`);
-              } else if (msg.type === "status") {
-                setQueueMessage(null); // return to normal text
-              } else if (msg.type === "result") {
-                setResult(msg.data as AnalyzeResult);
-                setTimeout(
-                  () => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                  100
-                );
-                setLoading(false);
-                return;
-              }
-            } catch (err) {
-              console.error("Stream JSON parse error:", err);
-            }
-          }
-        }
+      const msg = await res.json();
+      if (msg.error) {
+        setError(msg.error);
+        setQueueMessage(null);
+        setLoading(false);
+        return;
       }
+
+      setResult(msg as AnalyzeResult);
+      setQueueMessage(null);
+      setTimeout(
+        () => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        100
+      );
+      setLoading(false);
+
     } catch {
       setError("Network error. Check your connection and try again.");
-    } finally {
+      setQueueMessage(null);
       setLoading(false);
     }
   };

@@ -45,73 +45,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Username is required." }, { status: 400 });
   }
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const enqueue = (obj: any) => {
-        try {
-          controller.enqueue(new TextEncoder().encode(JSON.stringify(obj) + "\n"));
-        } catch { /* stream closed by client */ }
-      };
+  // --- HTTP 202 WAITLIST PROTOCOL ---
+  // If lambda concurrency limit is met, immediately push to Waitlist for Frontend Auto-Retry
+  if (activeScrapes >= MAX_CONCURRENT_SCRAPES) {
+    waitlistCount++;
+    return NextResponse.json({ queued: true, position: waitlistCount }, { status: 202 });
+  }
+  
+  if (waitlistCount > 0) waitlistCount--;
+  activeScrapes++;
 
-      waitlistCount++;
-      let inQueue = true;
-
-      try {
-        let waited = 0;
-        let lastReportedPos = -1;
-
-        while (activeScrapes >= MAX_CONCURRENT_SCRAPES) {
-          if (waited >= 40000) {
-            enqueue({ error: "Waitlist timeout. The servers are blazing hot! 🔥 Try again in a few minutes." });
-            controller.close();
-            return;
-          }
-          if (lastReportedPos !== waitlistCount) {
-             enqueue({ type: "queue", position: waitlistCount });
-             lastReportedPos = waitlistCount;
-          }
-          await new Promise((r) => setTimeout(r, 2000));
-          waited += 2000;
-        }
-
-        inQueue = false;
-        waitlistCount--;
-        activeScrapes++;
-
-        try {
-          enqueue({ type: "status", message: "Analyzing..." });
-          const result = await analyzeReplyGuys(username.trim());
-          enqueue({ type: "result", data: result });
-        } finally {
-          activeScrapes--;
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Analysis failed.";
-        
-        if (message === "TWITTER_COOKIES_NOT_SET") {
-          enqueue({ error: "The server isn't configured yet — cookies not set." });
-        } else if (message === "RATE_LIMITED") {
-          enqueue({ error: "X is rate-limiting our requests right now 🚦 The analysis might have partial data. Try again in a minute." });
-        } else if (message === "AUTH_FAILED") {
-          enqueue({ error: "Authentication failed — the burner account cookies may have expired. 🔑" });
-        } else if (message.includes("not found") || message.includes("suspended") || message.includes("private") || message.includes("no recent posts")) {
-          enqueue({ error: message });
-        } else {
-          console.error("[analyze] Error:", message);
-          enqueue({ error: `Analysis failed: ${message}` });
-        }
-      } finally {
-        if (inQueue) waitlistCount--;
-        try { controller.close(); } catch {}
-      }
+  try {
+    const result = await analyzeReplyGuys(username.trim());
+    return NextResponse.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Analysis failed.";
+    
+    if (message === "TWITTER_COOKIES_NOT_SET") {
+      return NextResponse.json({ error: "The server isn't configured yet — cookies not set." }, { status: 503 });
     }
-  });
+    if (message === "RATE_LIMITED") {
+      return NextResponse.json({ error: "X is rate-limiting our requests right now 🚦 The analysis might have partial data. Try again in a minute." }, { status: 429 });
+    }
+    if (message === "AUTH_FAILED") {
+      return NextResponse.json({ error: "Authentication failed — the burner account cookies may have expired. 🔑" }, { status: 401 });
+    }
+    if (message.includes("not found") || message.includes("suspended")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
+    if (message.includes("private") || message.includes("no recent posts")) {
+      return NextResponse.json({ error: message }, { status: 422 });
+    }
 
-  return new NextResponse(stream, {
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive"
-    },
-  });
+    console.error("[analyze] Error:", message);
+    return NextResponse.json({ error: `Analysis failed: ${message}` }, { status: 500 });
+  } finally {
+    activeScrapes--;
+  }
 }
