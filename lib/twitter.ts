@@ -116,28 +116,36 @@ async function getQueryIds(): Promise<QueryIds> {
 // ─── Headers ─────────────────────────────────────────────────────────────────
 
 function getServerCookies(): string {
-  const c = process.env.TWITTER_COOKIES;
-  if (!c || c.trim().length < 20 || c.includes("PASTE_YOUR")) {
+  // 1. Auto-Discovery: Find ALL variables starting with TWITTER_COOKIES
+  const envKeys = Object.keys(process.env).filter(k => k.startsWith("TWITTER_COOKIES"));
+  
+  let allRawCookies = "";
+  envKeys.forEach(k => {
+    allRawCookies += (process.env[k] || "") + "\n";
+  });
+
+  const c = allRawCookies.trim();
+
+  if (!c || c.length < 20 || c.includes("PASTE_YOUR")) {
     throw new Error("TWITTER_COOKIES_NOT_SET");
   }
-  // 1. Initial split by newlines (standard)
+
+  // 2. Initial split by newlines (standard)
   let pools = c.split(/\\n|\n/).map(l => l.trim()).filter(l => l.length > 20);
   
-  console.log(`[Cookie Farm] Detected ${pools.length} lines. Total raw length: ${c.length} chars.`);
+  console.log(`[Cookie Farm] Auto-Discovered ${envKeys.length} variables. Total raw length: ${c.length} chars.`);
 
-  // 2. Fallback: If we only found 1 line but it contains many accounts smashed together
+  // 3. Fallback: If we only found 1 line but it contains many accounts smashed together
   if (pools.length === 1) {
     const candidate = pools[0];
     const tokenMatches = (candidate.match(/auth_token=/g) || []).length;
-    console.log(`[Cookie Farm] Single line mode. Found ${tokenMatches} auth_token markers.`);
-
+    
     if (tokenMatches > 1) {
+      console.log(`[Cookie Farm] Smashed cookie mode. Found ${tokenMatches} auth_token markers.`);
       // Split by common separators or markers
       pools = candidate.split(/(?=guest_id=)|(?=auth_token=)/g)
         .map(l => l.trim())
         .filter(l => l.length > 50 && l.includes("auth_token="));
-      
-      console.log(`[Cookie Farm] Looking for splits... New pool size: ${pools.length}`);
     }
   }
 
