@@ -120,11 +120,23 @@ function getServerCookies(): string {
   if (!c || c.trim().length < 20 || c.includes("PASTE_YOUR")) {
     throw new Error("TWITTER_COOKIES_NOT_SET");
   }
+  // 1. Initial split by newlines (standard)
   let pools = c.split(/\\n|\n/).map(l => l.trim()).filter(l => l.length > 20);
   
-  if (pools.length === 1 && pools[0].includes("guest_id") && pools[0].indexOf("guest_id", 10) > 0) {
-    const matches = c.split(/guest_id/g).filter(x => x.includes("auth_token="));
-    pools = matches.map(m => "guest_id" + m);
+  // 2. Fallback: If we only found 1 line but it contains many accounts smashed together
+  if (pools.length === 1) {
+    // Some users paste dozens of cookies separated by spaces or just concatenated
+    // We look for the start of unique auth sessions
+    const sessionMarkers = ["guest_id=", "auth_token=", "kdt="];
+    let candidate = pools[0];
+    
+    // If the one line has multiple auth_tokens, it's definitely multiple accounts
+    if ((candidate.match(/auth_token=/g) || []).length > 1) {
+      // Split by common separators (space, newline, or the start of a guest_id)
+      pools = candidate.split(/(?=guest_id=)|(?=auth_token=)/g)
+        .map(l => l.trim())
+        .filter(l => l.length > 50 && l.includes("auth_token="));
+    }
   }
 
   if (pools.length === 0) throw new Error("TWITTER_COOKIES_NOT_SET");
