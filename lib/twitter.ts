@@ -123,19 +123,21 @@ function getServerCookies(): string {
   // 1. Initial split by newlines (standard)
   let pools = c.split(/\\n|\n/).map(l => l.trim()).filter(l => l.length > 20);
   
+  console.log(`[Cookie Farm] Detected ${pools.length} lines. Total raw length: ${c.length} chars.`);
+
   // 2. Fallback: If we only found 1 line but it contains many accounts smashed together
   if (pools.length === 1) {
-    // Some users paste dozens of cookies separated by spaces or just concatenated
-    // We look for the start of unique auth sessions
-    const sessionMarkers = ["guest_id=", "auth_token=", "kdt="];
-    let candidate = pools[0];
-    
-    // If the one line has multiple auth_tokens, it's definitely multiple accounts
-    if ((candidate.match(/auth_token=/g) || []).length > 1) {
-      // Split by common separators (space, newline, or the start of a guest_id)
+    const candidate = pools[0];
+    const tokenMatches = (candidate.match(/auth_token=/g) || []).length;
+    console.log(`[Cookie Farm] Single line mode. Found ${tokenMatches} auth_token markers.`);
+
+    if (tokenMatches > 1) {
+      // Split by common separators or markers
       pools = candidate.split(/(?=guest_id=)|(?=auth_token=)/g)
         .map(l => l.trim())
         .filter(l => l.length > 50 && l.includes("auth_token="));
+      
+      console.log(`[Cookie Farm] Looking for splits... New pool size: ${pools.length}`);
     }
   }
 
