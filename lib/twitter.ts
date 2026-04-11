@@ -17,7 +17,7 @@ import { unstable_cache } from "next/cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 3;   // SOS PATCH: Reduced to 3 to survive 1.2k+ requests/5mins surge
+const TWEETS_TO_ANALYZE = 6;   // increased back to 6 as traffic stabilizes from viral peak
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // --- Auto-Heal Load Balancer State ---
