@@ -6,8 +6,8 @@ export const runtime = "nodejs";
 
 // Simple per-IP rate limiting (in-memory, resets on cold start)
 const ipRequestLog = new Map<string, number[]>();
-const MAX_REQUESTS_PER_IP = 3;   // max 3 analyzes per window
-const WINDOW_MS = 60 * 1000;     // per 60 seconds
+const MAX_REQUESTS_PER_IP = 20;  // Increased to 20 to stop blocking users testing multiple devices on one Wi-Fi
+const WINDOW_MS = 60 * 1000;      // per 60 seconds
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -20,7 +20,7 @@ function isRateLimited(ip: string): boolean {
 // Global in-memory queue to limit simultaneous scraping (per Vercel instance)
 let activeScrapes = 0;
 let waitlistCount = 0;
-const MAX_CONCURRENT_SCRAPES = 2;
+const MAX_CONCURRENT_SCRAPES = 3; // Bumped to 3 concurrent for 14-cookie farm efficiency
 
 export async function POST(request: NextRequest) {
   // IP-based rate limiting
@@ -46,13 +46,18 @@ export async function POST(request: NextRequest) {
   }
 
   // --- HTTP 202 WAITLIST PROTOCOL ---
-  // If lambda concurrency limit is met, immediately push to Waitlist for Frontend Auto-Retry
+  const isRetry = request.headers.get("x-is-retry") === "true";
+
   if (activeScrapes >= MAX_CONCURRENT_SCRAPES) {
-    waitlistCount++;
-    return NextResponse.json({ queued: true, position: waitlistCount }, { status: 202 });
+    // Only increment waitlist if it's the first time entering the queue
+    if (!isRetry) waitlistCount++;
+    
+    // Safety clamp: don't show absurd numbers if instances diverge
+    const displayPos = Math.min(waitlistCount, 12); 
+    return NextResponse.json({ queued: true, position: displayPos }, { status: 202 });
   }
   
-  if (waitlistCount > 0) waitlistCount--;
+  if (!isRetry && waitlistCount > 0) waitlistCount--;
   activeScrapes++;
 
   try {

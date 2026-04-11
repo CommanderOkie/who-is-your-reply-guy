@@ -41,18 +41,28 @@ export default function Home() {
     setError(null);
     setResult(null);
     try {
+      const isRetry = !!queueMessage; // detect if we are already in the waiting corner
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-is-retry": isRetry ? "true" : "false"
+        },
         body: JSON.stringify({ username: raw }),
       });
 
-      // Auto-Polling REST Execution
+      // Auto-Polling REST Execution (Waiting Room)
       if (res.status === 202) {
         const data = await res.json();
-        setQueueMessage(`Waitlist: You are #${data.position} in queue. Waiting 4s... ⏳`);
-        // We do NOT set loading to false. We auto-retry in 4 seconds!
+        setQueueMessage(`Waitlist: You are #${data.position} in queue. Refreshing... ⏳`);
         setTimeout(() => handleAnalyze(raw), 4000);
+        return;
+      }
+
+      // Handle IP Rate Limiting (429) inside the waiting corner
+      if (res.status === 429) {
+        setQueueMessage("Cooling down... Too many requests from your IP. Retrying in 10s. 🐢");
+        setTimeout(() => handleAnalyze(raw), 10000);
         return;
       }
 
