@@ -141,10 +141,10 @@ function getServerCookies(): string {
     return false;
   });
   
-  if (available.length === 0) {
-    // If all are burned out, we blindly rotate and gracefully hit the rate limit screen
-    return pools[Math.floor(Math.random() * pools.length)];
-  }
+  const availableCount = available.length;
+  const burnedCount = pools.length - availableCount;
+
+  console.log(`[Cookie Farm] 🟢 ${availableCount}/${pools.length} active | 🔥 ${burnedCount} resting`);
   
   return available[Math.floor(Math.random() * available.length)];
 }
