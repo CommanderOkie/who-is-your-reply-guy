@@ -20,7 +20,7 @@ function isRateLimited(ip: string): boolean {
 // Global in-memory queue to limit simultaneous scraping (per Vercel instance)
 let activeScrapes = 0;
 let waitlistCount = 0;
-const MAX_CONCURRENT_SCRAPES = 3; // Bumped to 3 concurrent for 14-cookie farm efficiency
+const MAX_CONCURRENT_SCRAPES = 1; // SOS PATCH: Reduced to 1 to spread out API demand during extreme viral load
 
 export async function POST(request: NextRequest) {
   // IP-based rate limiting

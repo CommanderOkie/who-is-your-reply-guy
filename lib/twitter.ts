@@ -17,7 +17,7 @@ import { unstable_cache } from "next/cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 10;   // dropped back to 10 natively to securely survive massive 100-request surges
+const TWEETS_TO_ANALYZE = 3;   // SOS PATCH: Reduced to 3 to survive 1.2k+ requests/5mins surge
 const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
 
 // --- Auto-Heal Load Balancer State ---
@@ -557,7 +557,7 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
   const getCachedAnalysis = unstable_cache(
     async () => performActualScraping(clean),
     [`reply-guy-analysis-${clean}`],
-    { revalidate: 3600 } // Global TTL: 1 hour before it hits your burner cookies again
+    { revalidate: 86400 } // SOS PATCH: Global TTL bumped to 24 hours to protect cookies during viral peak
   );
 
   return await getCachedAnalysis();
