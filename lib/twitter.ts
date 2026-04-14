@@ -13,7 +13,16 @@
 
 import { queryIdCache, QUERY_ID_TTL } from "./cache";
 import { unstable_cache } from "next/cache";
-import { kv } from "@vercel/kv";
+import Redis from "ioredis";
+
+// Global Redis client with fail-safe initialization
+const redis = process.env.REDIS_URL || process.env.KV_URL
+  ? new Redis(process.env.REDIS_URL || process.env.KV_URL!)
+  : null;
+
+if (!redis) {
+  console.warn("[Database] No REDIS_URL or KV_URL found. Wall of Fame will be inactive.");
+}
 
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
@@ -23,29 +32,27 @@ const CONCURRENCY = 5;           // Optimized for 50-tweet batches to stay under
 
 // --- Global Stat Trackers ---
 async function recordSearchSuccess(targetHandle: string, topReplyGuy: string, count: number) {
+  if (!redis) return;
   try {
     // 1. Increment total global searches
-    await kv.incr("global:total_searches");
+    await redis.incr("global:total_searches");
 
     // 2. Track trending handles (Sorted Set)
-    await kv.zincrby("trending:handles", 1, targetHandle.toLowerCase());
+    await redis.zincrby("trending:handles", 1, targetHandle.toLowerCase());
 
     // 3. Update Wall of Fame (Record the strongest reply guy for this target)
-    // Only update if the current score is higher than the existing one
-    const existingStr = await kv.hget("wall_of_fame:data", targetHandle.toLowerCase()) as string;
+    const existingStr = await redis.hget("wall_of_fame:data", targetHandle.toLowerCase());
     const existing = existingStr ? JSON.parse(existingStr) : null;
     
     if (!existing || count > existing.count) {
-      await kv.hset("wall_of_fame:data", {
-        [targetHandle.toLowerCase()]: JSON.stringify({
-          top_guy: topReplyGuy,
-          count: count,
-          timestamp: Date.now()
-        })
-      });
+      await redis.hset("wall_of_fame:data", targetHandle.toLowerCase(), JSON.stringify({
+        top_guy: topReplyGuy,
+        count: count,
+        timestamp: Date.now()
+      }));
     }
   } catch (err) {
-    console.error("[KV] Tracking failed:", err);
+    console.error("[Redis] Tracking failed:", err);
   }
 }
 

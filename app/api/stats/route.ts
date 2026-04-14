@@ -1,21 +1,30 @@
 import { NextResponse } from "next/server";
-import { kv } from "@vercel/kv";
+import Redis from "ioredis";
 
 export const dynamic = "force-dynamic";
 
+// Fail-safe Redis initialization
+const redis = process.env.REDIS_URL || process.env.KV_URL
+  ? new Redis(process.env.REDIS_URL || process.env.KV_URL!)
+  : null;
+
 export async function GET() {
+  if (!redis) {
+    return NextResponse.json({ totalSearches: 0, trending: [], wallOfFame: [] });
+  }
+
   try {
     // 1. Get total searches
-    const totalSearches = (await kv.get<number>("global:total_searches")) || 0;
+    const totalSearches = parseInt(await redis.get("global:total_searches") || "0", 10);
 
     // 2. Get top 5 trending (Sorted Set)
-    const trendingList = await kv.zrange("trending:handles", 0, 4, { rev: true, withScores: false });
+    const trendingList = await redis.zrevrange("trending:handles", 0, 4);
 
     // 3. Get Wall of Fame (Hash)
-    const rawWall = await kv.hgetall("wall_of_fame:data") || {};
+    const rawWall = await redis.hgetall("wall_of_fame:data") || {};
     const wallOfFame = Object.entries(rawWall)
-      .map(([handle, data]: [string, any]) => {
-        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      .map(([handle, data]: [string, string]) => {
+        const parsed = JSON.parse(data);
         return {
           target: handle,
           top_guy: parsed.top_guy,
