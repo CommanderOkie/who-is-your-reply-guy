@@ -18,6 +18,15 @@ export default function Home() {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const [stats, setStats] = useState<{ totalSearches: number; trending: string[]; wallOfFame: any[] } | null>(null);
+
+  // Fetch social proof stats on mount
+  useEffect(() => {
+    fetch("/api/stats")
+      .then(res => res.json())
+      .then(data => setStats(data))
+      .catch(() => {});
+  }, []);
 
   // Cycle loading messages while analyzing
   useEffect(() => {
@@ -128,6 +137,13 @@ export default function Home() {
         <p className="header-sub">
           Drop any public X username and we{"'"}ll expose who{"'"}s living rent-free in their replies. 👀
         </p>
+
+        {stats && stats.totalSearches > 0 && (
+          <div className="total-searches-badge">
+            <span className="pulse-icon">🔥</span>
+            <span>{stats.totalSearches.toLocaleString()} analyses performed</span>
+          </div>
+        )}
       </header>
 
       {/* ── Input ── */}
@@ -170,14 +186,14 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Example quick-picks */}
+        {/* Trending quick-picks */}
         {!loading && !result && (
-          <div className="example-row" aria-label="Try an example">
-            <span className="example-label">Try:</span>
-            {EXAMPLE_ACCOUNTS.map((handle) => (
+          <div className="example-row" aria-label="Trending now">
+            <span className="example-label">{stats && stats.trending.length > 0 ? "Trending:" : "Try:"}</span>
+            {(stats && stats.trending.length > 0 ? stats.trending : EXAMPLE_ACCOUNTS).map((handle) => (
               <button
                 key={handle}
-                className="example-chip"
+                className="example-chip trending-chip"
                 onClick={() => tryExample(handle)}
                 type="button"
               >
@@ -262,6 +278,31 @@ export default function Home() {
           )}
           <ResultCard result={result} onReset={() => { setResult(null); setUsername(""); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
         </div>
+      )}
+
+      {/* ── Wall of Fame ── */}
+      {!loading && !result && stats && stats.wallOfFame && stats.wallOfFame.length > 0 && (
+        <section className="fame-section">
+          <div className="fame-header">
+             <span className="fame-icon">🏛️</span>
+             <h2 className="fame-title">Wall of Fame</h2>
+             <p className="fame-sub">The most legendary reply guys discovered so far.</p>
+          </div>
+          <div className="fame-grid">
+            {stats.wallOfFame.map((entry, i) => (
+              <div key={i} className="fame-card">
+                <div className="fame-rank">#{i + 1}</div>
+                <div className="fame-content">
+                  <div className="fame-target">@{entry.target}</div>
+                  <div className="fame-reply-guy">
+                    <span className="fame-guy-name">@{entry.top_guy}</span>
+                    <span className="fame-stat">{entry.count} replies</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       <footer className="site-footer">
