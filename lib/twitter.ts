@@ -17,8 +17,8 @@ import { unstable_cache } from "next/cache";
 const BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-const TWEETS_TO_ANALYZE = 10;  // Level Up: Increased to 10 now that the 20-cookie farm is online
-const CONCURRENCY = 2;           // parallel TweetDetail fetches reduced to 2 to dodge X burst-limit tracking
+const TWEETS_TO_ANALYZE = 50;  // Deep Accuracy Mode: Enhanced depth for better precision
+const CONCURRENCY = 5;           // Optimized for 50-tweet batches to stay under 30s limit
 
 // --- Auto-Heal Load Balancer State ---
 const burnedCookies = new Map<string, number>();
@@ -285,8 +285,8 @@ async function getUserTweets(
   const tweets: MinTweet[] = [];
   let cursor: string | undefined = undefined;
 
-  // Search up to 4 pages deep to find enough original tweets
-  for (let page = 0; page < 4; page++) {
+  // Search up to 10 pages deep to find enough original tweets (Deep Accuracy Mode)
+  for (let page = 0; page < 10; page++) {
     const vars = encodeURIComponent(
       JSON.stringify({
         userId,
