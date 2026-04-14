@@ -59,9 +59,9 @@ async function recordSearchSuccess(targetHandle: string, topReplyGuy: string, co
 // --- Auto-Heal Load Balancer State ---
 const burnedCookies = new Map<string, number>();
 
-export function markCookieBurned(cookie: string) {
+export function markCookieBurned(cookie: string, reason = "Rate limited (429)") {
   burnedCookies.set(cookie, Date.now());
-  console.warn("🔥 Burned cookie auto-identified! Rotating out of pool for 15 minutes.");
+  console.warn(`🔥 Burned cookie identified [${reason}]! Rotating out of pool for 15 minutes.`);
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -622,64 +622,89 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
 }
 
 async function performActualScraping(clean: string): Promise<AnalyzeResult> {
-  const cookies = getServerCookies();
-  const headers = buildHeaders(cookies);
   const ids = await getQueryIds();
+  let lastError: Error | null = null;
 
-  try {
-    // 1. Look up user
-    const user = await lookupUser(clean, headers, ids);
+  // --- Auto-Retry Loop (3 Attempts) ---
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const cookies = getServerCookies();
+    const headers = buildHeaders(cookies);
 
-    // 2. Get original tweets
-    const tweets = await getUserTweets(user.id, TWEETS_TO_ANALYZE, headers, ids);
-    if (tweets.length === 0) {
-      throw new Error(`No original tweets found for @${clean}. The account may be private or have no recent posts.`);
+    try {
+      console.log(`[scraper] Analysis attempt ${attempt}/3 for @${clean}...`);
+
+      // 1. Look up user
+      let user;
+      try {
+        user = await lookupUser(clean, headers, ids);
+      } catch (err) {
+        const msg = (err as Error).message;
+        // If it's a "Not Found" error, it might be the cookie being restricted.
+        // Burn this cookie and try another one!
+        if (msg.includes("not found") || msg.includes("suspended")) {
+          markCookieBurned(cookies, "User Lookup Failure (404/Suspended)");
+          lastError = err as Error;
+          continue; // Try next attempt
+        }
+        throw err;
+      }
+
+      // 2. Get original tweets
+      const tweets = await getUserTweets(user.id, TWEETS_TO_ANALYZE, headers, ids);
+      if (tweets.length === 0) {
+        throw new Error(`No original tweets found for @${clean}. The account may be private or have no recent posts.`);
+      }
+
+      // 3. Parallel-fetch replies for all tweets
+      const { replyCounts, total, rateLimited } = await fetchRepliesParallel(
+        tweets, clean, headers, ids
+      );
+
+      if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
+
+      // 4. Sort and rank top 20
+      const sorted = Object.entries(replyCounts)
+        .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
+        .filter((u) => u.replies > 0)
+        .sort((a, b) => b.score - a.score || b.replies - a.replies)
+        .slice(0, 20);
+
+      const totalTopReplies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
+
+      const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
+        const dominance = totalTopReplies > 0 ? Math.round((rg.replies / totalTopReplies) * 100) : 0;
+        const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
+        const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
+        return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
+      });
+
+      const result: AnalyzeResult = {
+        username: clean,
+        displayName: user.name,
+        avatarUrl: user.avatar,
+        top_reply_guys,
+        total_replies_analyzed: total,
+        tweets_analyzed: tweets.length,
+        disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
+      };
+
+      // --- Record to Brain (KV) ---
+      if (top_reply_guys.length > 0) {
+        // Don't await this to keep response fast
+        recordSearchSuccess(clean, top_reply_guys[0].user, top_reply_guys[0].replies);
+      }
+
+      return result;
+    } catch (err) {
+      if (err instanceof Error && err.message === "RATE_LIMITED") {
+        markCookieBurned(cookies, "Rate Limited (429)");
+        lastError = err as Error;
+        continue; // Try next attempt
+      }
+      throw err;
     }
-
-    // 3. Parallel-fetch replies for all tweets
-    const { replyCounts, total, rateLimited } = await fetchRepliesParallel(
-      tweets, clean, headers, ids
-    );
-
-    if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
-
-    // 4. Sort and rank top 20
-    const sorted = Object.entries(replyCounts)
-      .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
-      .filter((u) => u.replies > 0)
-      .sort((a, b) => b.score - a.score || b.replies - a.replies)
-      .slice(0, 20);
-
-    const totalTopReplies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
-
-    const top_reply_guys: ReplyGuy[] = sorted.map((rg, idx) => {
-      const dominance = totalTopReplies > 0 ? Math.round((rg.replies / totalTopReplies) * 100) : 0;
-      const loyalty = tweets.length > 0 ? Math.round((rg.tweets_replied / tweets.length) * 100) : 0;
-      const { badge, emoji, color } = assignBadge(rg.replies, loyalty, idx);
-      return { ...rg, dominance, loyaltyScore: loyalty, score: rg.score, badge, badgeEmoji: emoji, color };
-    });
-
-    const result: AnalyzeResult = {
-      username: clean,
-      displayName: user.name,
-      avatarUrl: user.avatar,
-      top_reply_guys,
-      total_replies_analyzed: total,
-      tweets_analyzed: tweets.length,
-      disclaimer: `Based on replies to the last ${tweets.length} tweets.${rateLimited ? " (Partial — X rate limited some requests.)" : ""}`,
-    };
-
-    // --- Record to Brain (KV) ---
-    if (top_reply_guys.length > 0) {
-      // Don't await this to keep response fast
-      recordSearchSuccess(clean, top_reply_guys[0].user, top_reply_guys[0].replies);
-    }
-
-    return result;
-  } catch (err) {
-    if (err instanceof Error && err.message === "RATE_LIMITED") {
-      markCookieBurned(cookies);
-    }
-    throw err;
   }
+
+  // If we get here, all 3 attempts failed
+  throw lastError || new Error("Analysis failed after multiple attempts.");
 }
