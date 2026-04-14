@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { AnalyzeResult, ReplyGuy } from "@/lib/twitter";
 
-const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣", "1️⃣4️⃣", "1️⃣5️⃣", "1️⃣6️⃣", "1️⃣7️⃣", "1️⃣8️⃣", "1️⃣9️⃣", "2️⃣0️⃣"];
+const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"];
 
 const SAVAGE_LINES = [
   "Bro is camping your notifications with a tent and a blanket 🏕️",
@@ -329,7 +329,7 @@ function ReplyGuyRow({ rg, rank }: { rg: ReplyGuy; rank: number }) {
       className={`reply-guy-item ${isHero ? "hero-reply-card" : ""} ${isMedium ? "medium-reply-card" : ""} ${isCompact ? "compact-reply-card" : ""}`} 
       aria-label={`Rank ${rank + 1}: @${rg.user}`}
     >
-      <span className="reply-guy-rank" aria-hidden>
+      <span className={`reply-guy-rank ${rank >= 10 ? 'plain-rank' : ''}`} aria-hidden>
         {RANK_MEDALS[rank] ?? `#${rank + 1}`}
       </span>
 

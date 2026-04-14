@@ -578,7 +578,7 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
   // The next 5,000 people to search it will instantly pull the JSON blob from Vercel's CDN (Zero Cost)
   const getCachedAnalysis = unstable_cache(
     async () => performActualScraping(clean),
-    [`reply-guy-analysis-${clean}`],
+    [`reply-guy-analysis-v2-${clean}`],
     { revalidate: 300 } // Deep Accuracy: Reduced to 5 minutes to ensure fresher results for repeated searches
   );
 
