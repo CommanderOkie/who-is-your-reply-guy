@@ -655,6 +655,7 @@ async function performActualScraping(clean: string): Promise<AnalyzeResult> {
     const result: AnalyzeResult = {
       username: clean,
       displayName: user.name,
+      avatarUrl: user.avatar,
       top_reply_guys,
       total_replies_analyzed: total,
       tweets_analyzed: tweets.length,
