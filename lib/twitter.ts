@@ -579,7 +579,7 @@ export async function analyzeReplyGuys(username: string): Promise<AnalyzeResult>
   const getCachedAnalysis = unstable_cache(
     async () => performActualScraping(clean),
     [`reply-guy-analysis-${clean}`],
-    { revalidate: 86400 } // SOS PATCH: Global TTL bumped to 24 hours to protect cookies during viral peak
+    { revalidate: 300 } // Deep Accuracy: Reduced to 5 minutes to ensure fresher results for repeated searches
   );
 
   return await getCachedAnalysis();
@@ -607,12 +607,12 @@ async function performActualScraping(clean: string): Promise<AnalyzeResult> {
 
     if (rateLimited && total === 0) throw new Error("RATE_LIMITED");
 
-    // 4. Sort and rank top 10
+    // 4. Sort and rank top 20
     const sorted = Object.entries(replyCounts)
       .map(([u, d]) => ({ user: u, replies: d.count, tweets_replied: d.tweetIds.size, score: d.score }))
       .filter((u) => u.replies > 0)
       .sort((a, b) => b.score - a.score || b.replies - a.replies)
-      .slice(0, 10);
+      .slice(0, 20);
 
     const totalTopReplies = sorted.reduce((sum, rg) => sum + rg.replies, 0);
 

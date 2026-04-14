@@ -195,7 +195,7 @@ export default function Home() {
           <p className="loading-text" style={{ color: queueMessage ? '#f472b6' : 'inherit' }}>
              {queueMessage ? queueMessage : LOADING_STEPS[loadingStep].text}
           </p>
-          <p className="loading-sub">Scraping X replies — takes ~8–15s ⚡</p>
+          <p className="loading-sub">Scraping X replies — takes ~20–25s ⚡</p>
           <div className="loading-steps">
             {LOADING_STEPS.slice(0, loadingStep + 1).map((step, i) => (
               <div

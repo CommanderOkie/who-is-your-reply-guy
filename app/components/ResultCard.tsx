@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { AnalyzeResult, ReplyGuy } from "@/lib/twitter";
 
-const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+const RANK_MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣", "1️⃣4️⃣", "1️⃣5️⃣", "1️⃣6️⃣", "1️⃣7️⃣", "1️⃣8️⃣", "1️⃣9️⃣", "2️⃣0️⃣"];
 
 const SAVAGE_LINES = [
   "Bro is camping your notifications with a tent and a blanket 🏕️",
